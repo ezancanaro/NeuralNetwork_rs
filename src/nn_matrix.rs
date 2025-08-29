@@ -1,6 +1,7 @@
 use rand;
 use rand::Rng;
 use std::cmp;
+use std::collections;
 use std::fmt;
 use std::ops::{Add, Index, IndexMut, Mul}; //Traits para o operador de índice []
 
@@ -38,7 +39,7 @@ impl Matrix {
     /*Intervalo Glorot: média 0 e variância 2/n_in+n_out
         [-(sqrt(6)/sqrt(n_in+n_out)),(sqrt(6)/sqrt(n_in+n_out))]
     */
-    pub fn new_random_gloirot(n_in: usize, n_out: usize) -> Matrix {
+    pub fn new_random_glorot(n_in: usize, n_out: usize) -> Matrix {
         let high = ((6.0 as f64).sqrt() / ((n_in + n_out) as f64)).sqrt();
         let low = -high;
         let mut rng = rand::rng();
@@ -77,8 +78,8 @@ impl Matrix {
 
     //Função auxiliar para calcular o índice do vetor de dados com base nos índices de linha e coluna
     fn index(&self, row: usize, col: usize) -> usize {
-        assert!(row < self.rows); //Índice da linha deve ser válido 0 < row < self.rows
-        assert!(col < self.cols); //Índice da coluna deve ser válido 0 < row < self.rows
+        assert!(row < self.rows); //Índice da linha deve ser válido 0 <= row < self.rows
+        assert!(col < self.cols); //Índice da coluna deve ser válido 0 <= row < self.rows
         return row * self.cols + col;
     }
 
@@ -88,32 +89,17 @@ impl Matrix {
         // se a primeira tem dimensões      M x N
         // a segunda deve possuir dimensões N x O
         assert!(self.cols == other.rows);
-        let max_n = self.cols;
         let mut product = Matrix::new(self.rows, other.cols);
         //product [i,j] = sum(self[i][0]..[i][n] * other[0][j]..[n][j])
         for i in 0..product.rows {
-            for j in 0..product.cols {
-                //Da notação matemática: prod[i,j] = sum(self[i][k] * other[k][j])
-                let mut val = 0.0;
-                for k in 0..max_n {
-                    val += self[i][k] * other[k][j];
+            for j in 0..other.cols {
+                //Da notação matemática: prod[i,j] = sum(self[i,k] * other[k,j])
+                let mut row_product = 0.0;
+                for k in 0..self.cols {
+                    row_product += self[i][k] * other[k][j];
                 }
-                product[i][j] = val;
+                product[i][j] = row_product;
             }
-        }
-        return product;
-    }
-
-    //Implementa o produto escalar de cada linha da matriz original com um vetor
-    pub fn dot_vec(&self, other: &Vec<f64>) -> Matrix {
-        assert!(self.cols == other.len());
-        let mut product = Matrix::new(self.rows, 1);
-        for i in 0..self.rows {
-            let mut row_product: f64 = 0.0;
-            for j in 0..self.cols {
-                row_product += self[i][j] * other[j];
-            }
-            product[i][0] = row_product;
         }
         return product;
     }
@@ -158,16 +144,11 @@ impl fmt::Display for Matrix {
             write!(f, "| ")?;
             let start_index = i * self.cols;
             let slice = &self.data[start_index..start_index + self.cols];
-            for i in 0..self.cols - 1 {
+            for i in 0..self.cols {
                 //Imprime alinhado à direita (>) com largura FMT_NUM_WIDTH e FMT_NUM_PRECISION casas decimais
                 write!(f, "{:>FMT_NUM_WIDTH$.FMT_NUM_PRECISION$}  ", slice[i])?;
             }
-            write!(
-                f,
-                "{:>FMT_NUM_WIDTH$.FMT_NUM_PRECISION$}",
-                slice[self.cols - 1]
-            )?;
-            write!(f, " |\n")?;
+            write!(f, "|\n")?;
         }
         write!(f, "")
     }
@@ -183,6 +164,7 @@ impl Index<(usize, usize)> for Matrix {
     }
 }
 
+//Implementação de índices através de tupla: a[(linha,coluna)]
 impl IndexMut<(usize, usize)> for Matrix {
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
         let (row, col) = index;
@@ -195,7 +177,7 @@ impl IndexMut<(usize, usize)> for Matrix {
 impl Index<usize> for Matrix {
     type Output = [f64];
     fn index(&self, index: usize) -> &Self::Output {
-        let idx_base = index * self.cols;
+        let idx_base = self.index(index,0);
         let slice = &self.data[idx_base..idx_base + self.cols];
         return slice;
     }
@@ -225,10 +207,15 @@ impl Mul for Matrix {
         self.multiply(&rhs)
     }
 }
+impl Mul for &Matrix {
+    type Output = Matrix;
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.multiply(rhs)
+    }
+}
 
 impl Add<&Matrix> for Matrix {
     type Output = Matrix;
-
     fn add(self, rhs: &Self) -> Self::Output {
         assert!(self.rows == rhs.rows && self.cols == rhs.cols);
         let mut result = Matrix::new(self.rows, self.cols);
@@ -243,34 +230,18 @@ impl Add<&Matrix> for Matrix {
 mod tests {
     // Note this useful idiom: importing names from outer (for mod tests) scope. (Rust Book)
     use super::*;
-    /**
-     * Teste com as matrizes
-     * | 1 2 3 |   | 7 |
-     * |-4 0 5 | e |-1 |
-     *             | 2 |
-     */
     #[test]
-    fn test_dot() {
-        let base_matrix = Matrix {
+    fn test_indexes() {
+        let mut base_matrix = Matrix {
             rows: 2,
             cols: 3,
             data: vec![1.0, 2.0, 3.0, -4.0, 0.0, 5.0],
         };
-        let other = Matrix {
-            rows: 3,
-            cols: 1,
-            data: vec![7.0, -1.0, 2.0],
-        };
-        let expected = Matrix {
-            rows: 2,
-            cols: 1,
-            data: vec![11.0, -18.0],
-        };
-        let result = base_matrix.dot_vec(&other.data);
-        print!("Base: {}", base_matrix);
-        print!("Mult: {}", other);
-        print!("Result: {}", result);
-        assert!(expected == result);
+        print!("{}\n", base_matrix);
+        base_matrix[0][1] = 5.0;
+        print!("{}\n", base_matrix);
+        base_matrix[(1, 2)] = -40.0;
+        print!("{}\n", base_matrix);
     }
 
     #[test]
@@ -298,7 +269,21 @@ mod tests {
         print!("Result: {}", result);
         assert!(expected == result);
     }
-
+    #[test]
+    #[should_panic]
+    fn test_invalid_mult() {
+        let base_matrix = Matrix {
+            rows: 1,
+            cols: 3,
+            data: vec![1.0, 2.0, 3.0],
+        };
+        let other = Matrix {
+            rows: 3,
+            cols: 2,
+            data: vec![2.0, 7.0, -1.0, 0.0, 4.0, 1.0],
+        };
+        let panic = other * base_matrix;
+    }
     #[test]
     fn test_transpose() {
         let base_matrix = Matrix {
@@ -320,5 +305,41 @@ mod tests {
         print!("Transposed: {}", transpose_matrix);
 
         assert!(transpose == transpose_matrix);
+    }
+
+    #[test]
+    fn test_add() {
+        let base_matrix = Matrix {
+            rows: 2,
+            cols: 2,
+            data: vec![1.0, 2.0, 3.0, -4.0],
+        };
+        let other = Matrix {
+            rows: 2,
+            cols: 2,
+            data: vec![2.0, 7.0, -1.0, 0.0],
+        };
+        let expected = Matrix {
+            rows: 2,
+            cols: 2,
+            data: vec![3.0, 9.0, 2.0, -4.0],
+        };
+        let result = base_matrix + &other;
+        assert!(expected == result);
+    }
+    #[test]
+    #[should_panic]
+    fn test_invalid_add() {
+        let base_matrix = Matrix {
+            rows: 1,
+            cols: 3,
+            data: vec![1.0, 2.0, 3.0],
+        };
+        let other = Matrix {
+            rows: 3,
+            cols: 2,
+            data: vec![2.0, 7.0, -1.0, 0.0, 4.0, 1.0],
+        };
+        let panic = other + &base_matrix;
     }
 }

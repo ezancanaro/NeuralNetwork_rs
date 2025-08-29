@@ -5,7 +5,17 @@ use std::cmp::max;
  */
 //http://neuralnetworksanddeeplearning.com/chap2.html
 //https://www.3blue1brown.com/lessons/backpropagation-calculus#title
-use crate::nn_matrix;
+use crate::nn_matrix::Matrix;
+
+struct Neuron {
+    value: f64,
+}
+
+impl Neuron {
+    //activate(bias + sum(x_i * w_i))
+    //Aplicada ao resultado da soma dos pesos * valor da camada anterior
+    //somado ao viés da camada
+}
 
 pub trait ActivationFunction {
     fn activate(&self, val: f64) -> f64;
@@ -22,24 +32,25 @@ impl ActivationFunction for Sigmoid {
         sigma * (1.0 - sigma)
     }
 }
-
-struct Neuron {
-    value: f64,
+pub struct Relu {}
+impl ActivationFunction for Relu {
+    fn activate(&self, val: f64) -> f64 {
+        f64::max(0.0, val)
+    }
+    fn derivative(&self, val: f64) -> f64 {
+        match val {
+            0.0 | _ if val < 0.0 => 0.0,
+            _ => 1.0,
+        }
+    }
 }
-
-impl Neuron {
-    //activate(bias + sum(x_i * w_i))
-    //Aplicada ao resultado da soma dos pesos * valor da camada anterior
-    //somado ao viés da camada
-}
-
 // type Link = Box<Layer>;
 pub struct Layer {
-    neurons: Vec<f64>,
-    weighted_input: Vec<f64>,
-    deltas: Vec<f64>,
-    weights: nn_matrix::Matrix,
-    biases: nn_matrix::Matrix,
+    neurons: Matrix,
+    weighted_input: Matrix,
+    deltas: Matrix,
+    weights: Matrix,
+    biases: Matrix,
     activation: Box<dyn ActivationFunction>, //Verificar como armazenar o objeto de trait
 }
 
@@ -51,38 +62,38 @@ impl Layer {
         activation_function: impl ActivationFunction + 'static, //Verificar se é a melhor forma de armazenar isso aqui
     ) -> Layer {
         Layer {
-            neurons: vec![0.0; layer_neurons],
-            weighted_input: vec![0.0; layer_neurons],
-            deltas: vec![0.0; layer_neurons],
-            weights: nn_matrix::Matrix::new_random(prev_layer_neurons, layer_neurons),
-            biases: nn_matrix::Matrix::new_random(layer_neurons, 1),
+            neurons: Matrix::new(layer_neurons, 1),
+            weighted_input: Matrix::new(layer_neurons, 1),
+            deltas: Matrix::new(layer_neurons, 1),
+            weights: Matrix::new_random(layer_neurons, prev_layer_neurons),
+            biases: Matrix::new_random(layer_neurons, 1),
             activation: Box::new(activation_function),
         }
     }
 
-    pub fn deltas(&self) -> &Vec<f64> {
+    pub fn deltas(&self) -> &Matrix {
         &self.deltas
     }
 
-    pub fn propagate(&mut self, input_neurons: Vec<f64>) {
+    pub fn propagate(&mut self, input_neurons: Matrix) {
         //activation = act_fn( bias + sum_i(input_neurons_i * weights_i) )
-        let weight_transpose = self.weights.transpose();
-        let dot_product = weight_transpose.dot_vec(&input_neurons);
+        // let weight_transpose = self.weights.transpose();
+        let dot_product = &(self.weights) * &input_neurons; //A ordem importa (input * weights) geraria erro!
         let biased_values = dot_product + &self.biases;
-        assert!(biased_values.rows() == self.neurons.len());
+        assert!(biased_values.rows() == self.neurons.rows());
         //Biased_values deve ser uma matriz nx1
         for i in 0..biased_values.rows() {
             //Armazena o resultado para a fase de backprop
-            self.weighted_input[i] = biased_values[i][0]; //z
-            self.neurons[i] = self.activation.activate(biased_values[i][0]);
+            self.weighted_input[i][0] = biased_values[i][0]; //z
+            self.neurons[i][0] = self.activation.activate(biased_values[i][0]);
         }
     }
 
-    pub fn cost(&mut self, expected: Vec<f64>) -> f64 {
-        assert!(self.neurons.len() == expected.len());
+    pub fn cost(&mut self, expected: Matrix) -> f64 {
+        assert!(self.neurons.rows() == expected.rows());
         let mut sum = 0.0;
-        for i in 0..self.neurons.len() {
-            sum += (self.neurons[i] - expected[i]).powi(2);
+        for i in 0..self.neurons.rows() {
+            sum += (self.neurons[i][0] - expected[i][0]).powi(2);
         }
         return 0.5 * sum;
     }
@@ -96,30 +107,30 @@ impl Layer {
      * Hidden Layer: vector δ_l = hadamard_product((w_l+1)^T * δ_l+1, derivative(z_l))
      *
      * */
-    pub fn backpropagate_output(&mut self, expected: Vec<f64>) {
-        for i in 0..self.weighted_input.len() {
-            let derivative = self.activation.derivative(self.weighted_input[i]);
-            let cost_derivative = Layer::cost_derivative(self.neurons[i], expected[i]);
-            self.deltas[i] = derivative * cost_derivative;
+    pub fn backpropagate_output(&mut self, expected: Matrix) {
+        for i in 0..self.weighted_input.rows() {
+            let derivative = self.activation.derivative(self.weighted_input[i][0]);
+            let cost_derivative = Layer::cost_derivative(self.neurons[i][0], expected[i][0]);
+            self.deltas[i][0] = derivative * cost_derivative;
         }
     }
 
-    pub fn weights_transpose(&self) -> nn_matrix::Matrix {
+    pub fn weights_transpose(&self) -> Matrix {
         self.weights.transpose()
     }
 
     pub fn backpropagate_hidden(
         &mut self,
-        next_layer_transpose: &nn_matrix::Matrix,
-        next_layer_deltas: &Vec<f64>,
+        next_layer_transpose: &Matrix,
+        next_layer_deltas: &Matrix,
     ) {
         //TO-DO: tratar corretamente o tipo Option.
         let next_layer_transpose = next_layer_transpose;
-        let dot_product = next_layer_transpose.dot_vec(next_layer_deltas);
+        let dot_product = next_layer_transpose * next_layer_deltas;
 
-        for i in 0..self.weighted_input.len() {
-            let derivative = self.activation.derivative(self.weighted_input[i]);
-            self.deltas[i] = derivative * dot_product[i][0];
+        for i in 0..self.weighted_input.rows() {
+            let derivative = self.activation.derivative(self.weighted_input[i][0]);
+            self.deltas[i][0] = derivative * dot_product[i][0];
         }
     }
 }

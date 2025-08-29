@@ -1,14 +1,14 @@
 use std::iter;
 
 use crate::nn_layer;
-use crate::nn_matrix;
+use crate::nn_matrix::Matrix;
 struct NeuralNetwork {
     layers: Vec<nn_layer::Layer>,
     gradient: Vec<f64>,
 }
 
 impl NeuralNetwork {
-    pub fn backpropagate(&mut self, expected: Vec<f64>) {
+    pub fn backpropagate(&mut self, expected: Matrix) {
         //TO-DO: tratar option corretamente
         let mut iterator = self.layers.iter_mut().rev();
         let mut last_layer =iterator.next().unwrap();
