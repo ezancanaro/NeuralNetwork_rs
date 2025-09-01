@@ -1,2 +1,2 @@
 # NeuralNetwork_rs
-Neural Network implemented in Rust as a learning project
+In progress Neural Network implemented in Rust as a learning project
