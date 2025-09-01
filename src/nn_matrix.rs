@@ -1,3 +1,19 @@
+/**
+ *  Copyright 2025 Eric Zancanaro
+ *    
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *  
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ *  GNU General Public License for more details.
+ *  
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 use rand;
 use rand::Rng;
 use std::cmp;
@@ -7,6 +23,7 @@ use std::ops::{Add, Index, IndexMut, Mul}; //Traits para o operador de índice [
 
 const FMT_NUM_WIDTH: usize = 8;
 const FMT_NUM_PRECISION: usize = 3;
+const EPSILON: f64 = 1e-9; //Usado para implementar comparação absoluta de floats. Valor obtido
 
 #[derive(Debug)]
 pub struct Matrix {
@@ -34,6 +51,14 @@ impl Matrix {
             rows: num_rows,
             cols: num_cols,
             data: vec![0.0; num_rows * num_cols], //Dados inicializados com 0.0
+        }
+    }
+
+    pub fn from_vec(num_rows: usize, num_cols: usize, _data: Vec<f64>) -> Matrix {
+        Matrix {
+            rows: num_rows,
+            cols: num_cols,
+            data: _data, //Dados inicializados com 0.0
         }
     }
     /*Intervalo Glorot: média 0 e variância 2/n_in+n_out
@@ -177,7 +202,7 @@ impl IndexMut<(usize, usize)> for Matrix {
 impl Index<usize> for Matrix {
     type Output = [f64];
     fn index(&self, index: usize) -> &Self::Output {
-        let idx_base = self.index(index,0);
+        let idx_base = self.index(index, 0);
         let slice = &self.data[idx_base..idx_base + self.cols];
         return slice;
     }
@@ -196,8 +221,15 @@ impl PartialEq for Matrix {
         if self.rows != other.rows || self.cols != other.cols {
             return false;
         }
-        //Vec já implementa a comparação elemento a elemento, portanto não precisamos nos preocupar
-        self.data == other.data
+        //Comparação de floats com == pode gerar problemas.
+        //Método de comparação absoluta, suficiente enquanto só usamos para testes
+        //Uma biblioteca completa implementaria métodos mais robustos: https://floating-point-gui.de/errors/comparison/
+        for i in 00..self.data.len() {
+            if (self.data[i] - other.data[i]).abs() > EPSILON {
+                return false;
+            }
+        }
+        true
     }
 }
 
