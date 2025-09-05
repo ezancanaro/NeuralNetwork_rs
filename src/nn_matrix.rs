@@ -19,6 +19,9 @@ use rand::Rng;
 use std::cmp;
 use std::collections;
 use std::fmt;
+use std::ops::AddAssign;
+use std::ops::MulAssign;
+use std::ops::SubAssign;
 use std::ops::{Add, Index, IndexMut, Mul}; //Traits para o operador de índice []
 
 const FMT_NUM_WIDTH: usize = 8;
@@ -108,6 +111,10 @@ impl Matrix {
         return row * self.cols + col;
     }
 
+    pub fn num_elements(&self) -> usize {
+        self.rows * self.cols
+    }
+
     //Implementação simples do produto de 2 matrizes
     pub fn multiply(&self, other: &Matrix) -> Matrix {
         //Para produto de matrizes,
@@ -150,8 +157,8 @@ impl Matrix {
 
     pub fn hadamard_product(&self, other: &Matrix) -> Matrix {
         assert!(self.rows == other.rows && self.cols == other.cols);
-        let mut productVec = vec![0.0; self.data.len()];
-        for i in 0..self.data.len() {
+        let mut productVec = vec![0.0; self.num_elements()];
+        for i in 0..self.num_elements() {
             productVec[i] = self.data[i] * other.data[i];
         }
         Matrix {
@@ -162,16 +169,34 @@ impl Matrix {
     }
     pub fn mut_hadamard_product(&mut self, other: &Matrix) {
         if (self.rows == other.rows && self.cols == other.cols) {
-            for i in 0..self.data.len() {
+            for i in 0..self.num_elements() {
                 self.data[i] = self.data[i] * other.data[i];
             }
             return;
         }
         //Broadcasting simplificado quando other é matriz coluna
         assert!(self.rows == other.rows && other.cols == 1);
-        for i in 0..self.data.len() {
+        for i in 0..self.num_elements() {
             let j = i % other.rows;
             self.data[i] = self.data[i] * other.data[j];
+        }
+    }
+
+    pub fn scalar_product(self, scalar: f64) -> Matrix {
+        let mut result = Matrix {
+            rows: self.rows,
+            cols: self.cols,
+            data: vec![0.0; self.num_elements()],
+        };
+        for i in 0..self.num_elements() {
+            result.data[i] = self.data[i] * scalar;
+        }
+        result
+    }
+    
+    pub fn mut_scalar_product(&mut self, scalar: f64) {
+        for i in 0..self.num_elements() {
+            self.data[i] = self.data[i] * scalar;
         }
     }
 }
@@ -238,7 +263,7 @@ impl PartialEq for Matrix {
         //Comparação de floats com == pode gerar problemas.
         //Método de comparação absoluta, suficiente enquanto só usamos para testes
         //Uma biblioteca completa implementaria métodos mais robustos: https://floating-point-gui.de/errors/comparison/
-        for i in 00..self.data.len() {
+        for i in 00..self.num_elements() {
             if (self.data[i] - other.data[i]).abs() > EPSILON {
                 return false;
             }
@@ -265,10 +290,27 @@ impl Add<&Matrix> for Matrix {
     fn add(self, rhs: &Self) -> Self::Output {
         assert!(self.rows == rhs.rows && self.cols == rhs.cols);
         let mut result = Matrix::new(self.rows, self.cols);
-        for i in 0..(self.data.len()) {
+        for i in 0..(self.num_elements()) {
             result.data[i] = self.data[i] + rhs.data[i];
         }
         return result;
+    }
+}
+
+impl AddAssign<&Matrix> for Matrix {
+    fn add_assign(&mut self, rhs: &Matrix) {
+        assert!(self.rows == rhs.rows && self.cols == rhs.cols);
+        for i in 0..(self.num_elements()) {
+            self.data[i] = self.data[i] + rhs.data[i];
+        }
+    }
+}
+impl SubAssign<&Matrix> for Matrix {
+    fn sub_assign(&mut self, rhs: &Matrix) {
+        assert!(self.rows == rhs.rows && self.cols == rhs.cols);
+        for i in 0..(self.num_elements()) {
+            self.data[i] = self.data[i] - rhs.data[i];
+        }
     }
 }
 

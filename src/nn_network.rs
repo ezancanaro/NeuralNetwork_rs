@@ -1,5 +1,8 @@
-use std::thread::current;
-
+use crate::nn_layer::ActivationFunction;
+use crate::nn_layer::Gradient;
+use crate::nn_layer::Layer;
+use crate::nn_layer::Relu;
+use crate::nn_matrix::Matrix;
 /**
  *  Copyright 2025 Eric Zancanaro
  *    
@@ -16,15 +19,24 @@ use std::thread::current;
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-use crate::nn_layer::Layer;
-use crate::nn_layer::Relu;
-use crate::nn_matrix::Matrix;
-struct NeuralNetwork {
-    layers: Vec<Layer<Relu>>,
-    gradient: Vec<f64>,
+use std::collections::VecDeque;
+pub struct NeuralNetwork {
+    layers: Vec<Layer>,
+    learning_rate: f64,
 }
 
 impl NeuralNetwork {
+    pub fn new(num_layers: usize, _learning_rate: f64) -> NeuralNetwork {
+        NeuralNetwork {
+            layers: Vec::with_capacity(num_layers),
+            learning_rate: _learning_rate,
+        }
+    }
+
+    pub fn add_layer(&mut self, layer: Layer) {
+        self.layers.push(layer);
+    }
+
     pub fn cost_derivative_mse(x: f64, y: f64) -> f64 {
         2.0 * (x - y)
     }
@@ -42,11 +54,16 @@ impl NeuralNetwork {
     }
     }
     */
+    /**
+     * Treinamento da rede neural. Recebe os dados de entrada,
+     * propaga em toda a rede e executa o algoritmo de retropropagação.
+     *
+     */
     pub fn train(&mut self, input: Matrix, expected_output: Matrix) {
         assert!(!self.layers.is_empty());
         let last_layer_index = self.layers.len() - 1;
         //Propaga a primeira camada
-        self.layers[0].propagate(&input);
+        self.layers[0].load_input(input);
         //Propaga as camadas remanescentes
         for i in 1..self.layers.len() {
             //Separa em 2 slices: [0..i) e [i..len)
@@ -55,38 +72,36 @@ impl NeuralNetwork {
             layers_to_propagate[0].propagate(prev_layers[i - 1].neurons());
         }
         //Limita o escopo dos slices para evitar erro de borrow na retropropagação
+        let mut gradients: VecDeque<Gradient> = VecDeque::with_capacity(self.layers.len());
         {
             let (hidden_layers, output_layers) = self.layers.split_at_mut(last_layer_index);
-            output_layers[0].backpropagate_output_layer(
+            let gradient = output_layers[0].backpropagate_output_layer(
                 &expected_output,
                 hidden_layers[last_layer_index - 1].neurons(),
-                NeuralNetwork::cost_derivative_mse,
+                &NeuralNetwork::cost_derivative_mse,
             );
+            gradients.push_front(gradient);
+        };
+
+        for i in (1..last_layer_index).rev() {
+            //slices [0..i) e [i..len()-1) (Novamente lidando com borrow checker)
+            let (initial_layers, current_and_done_layers) = self.layers.split_at_mut(i);
+            let (current_layer, done_layers) = current_and_done_layers.split_at_mut(1);
+
+            let gradient = current_layer[0].backpropagate_hidden_layer(
+                &done_layers[0].weights(),
+                &gradients[0].delta,
+                initial_layers[i - 1].neurons(),
+            );
+            gradients.push_front(gradient);
         }
-        for i in (2..last_layer_index).rev() {
-            //slices [0..i) e [i..len()] (Novamente lidando com borrow checker)
-            let (propagation_layers, done_layers) = self.layers.split_at_mut(i);
-            //slices [0..i-1)] e [i-1)
-            let (coming_layers, current_layers) = propagation_layers.split_at_mut(i - 1);
-            current_layers[0]
-                .backpropagate_hidden_layer(&done_layers[0], coming_layers[i - 2].neurons());
+
+        assert!(gradients.len() == self.layers.len() - 1);
+        let adjustable_layers = self.layers.iter_mut().skip(1);
+        //zip: agrupa 2 iteradores. O laço é finalizado quanto um deles chega ao fim.
+        //No nosso caso, ambos terão o mesmo tamanho, dado o assert! acima.
+        for (layer, gradient) in adjustable_layers.zip(gradients) {
+            layer.adjust_parameters(gradient, self.learning_rate);
         }
-        let (remaining_layers, done_layers) = self.layers.split_at_mut(2);
-
-
-    }
-
-    pub fn backpropagate(&mut self, expected: Matrix) {
-        //TO-DO: tratar option corretamente
-        let mut iterator = self.layers.iter_mut().rev();
-        let mut last_layer = iterator.next().unwrap();
-        // last_layer.backpropagate_output(expected);
-        // for current_layer in iterator {
-        //     let transpose = last_layer.weights_transpose();
-        //     let deltas = last_layer.deltas();
-        //     current_layer.backpropagate_hidden(&transpose, deltas);
-
-        //     last_layer = current_layer;
-        // }
     }
 }
