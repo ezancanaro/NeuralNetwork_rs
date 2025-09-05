@@ -97,8 +97,8 @@ impl Matrix {
      * Inicializa uma nova matriz com valores aleatórios.
      * Por padrão, usa a inicialização He voltada à ativação via ReLU
      */
-    pub fn new_random(n_in: usize, n_out: usize) -> Matrix {
-        Matrix::new_random_he(n_in, n_out)
+    pub fn new_random(num_rows: usize, num_cols: usize) -> Matrix {
+        Matrix::new_random_he(num_rows, num_cols)
     }
 
     //Função auxiliar para calcular o índice do vetor de dados com base nos índices de linha e coluna
@@ -148,7 +148,7 @@ impl Matrix {
         return transpose;
     }
 
-    pub fn hadamard_product(&self, other: Matrix) -> Matrix {
+    pub fn hadamard_product(&self, other: &Matrix) -> Matrix {
         assert!(self.rows == other.rows && self.cols == other.cols);
         let mut productVec = vec![0.0; self.data.len()];
         for i in 0..self.data.len() {
@@ -158,6 +158,20 @@ impl Matrix {
             rows: self.rows(),
             cols: self.cols,
             data: productVec,
+        }
+    }
+    pub fn mut_hadamard_product(&mut self, other: &Matrix) {
+        if (self.rows == other.rows && self.cols == other.cols) {
+            for i in 0..self.data.len() {
+                self.data[i] = self.data[i] * other.data[i];
+            }
+            return;
+        }
+        //Broadcasting simplificado quando other é matriz coluna
+        assert!(self.rows == other.rows && other.cols == 1);
+        for i in 0..self.data.len() {
+            let j = i % other.rows;
+            self.data[i] = self.data[i] * other.data[j];
         }
     }
 }
