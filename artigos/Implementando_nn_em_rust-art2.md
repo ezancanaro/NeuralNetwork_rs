@@ -326,7 +326,7 @@ pub struct Layer<T: ActivationFunction> {
 
 Com essa estrutura, não temos mais o tipo genérico associado a nenhuma propriedade, portanto podemos remover a propriedade de tipo genérico da struct:
 
-pub struct Layer<T: ActivationFunction> {
+pub struct Layer {
     neurons: Matrix,
     weights: Matrix,
     biases: Matrix,
