@@ -70,6 +70,8 @@ pub struct Layer {
     activation_derivative: fn(f64) -> f64, 
 }
 
+
+
 impl Layer  {
     pub fn new<F:ActivationFunction>(
         prev_layer_neurons: usize,
@@ -177,7 +179,6 @@ impl Layer  {
             //∂C/∂a = 2(a - y) - Derivada parcial de C por a
             let c_a_partial_derivative = cost_derivative(self.neurons[i][0], expected[i][0]);
             //Original: let c_a_partial_derivative = 2.0 * (self.neurons[i][0] - expected[i][0]);
-
             //δ = hadamard_product(∂C/∂a, ∂aL/∂z).
             //Detalhe: o vetor delta é a derivada em função dos viéses ∂C/∂b = ∂z/∂b * ∂a/∂z * ∂C/∂a
             //já que ∂z/∂b = 1
@@ -265,24 +266,41 @@ mod tests {
     fn test_propagate() {
         let input_n = 3;
         let layer1_n = 5;
-        let layer2_n = 7;
+        let layer2_n = 3;
         //Camadas com pesos aleatórios e viéses inicializados em 0
         let mut layer1 =
             Layer::new::<Identity>(input_n, layer1_n);
         let mut layer2 =
             Layer::new::<Identity>(layer1_n, layer2_n);
-
         let input_mock = Matrix::from_vec(input_n, 1, vec![1.0, 1.0, 1.0]);
+        let weights1_mock = Matrix::from_vec(
+            layer1_n,
+            input_n,
+            vec![
+                0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5,
+            ],
+        );
+        let weights2_mock = Matrix::from_vec(
+            layer2_n,
+            layer1_n,
+            vec![
+                0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5,
+            ],
+        );
+        let bias1_mock = Matrix::from_vec(layer1_n, 1, vec![0.01, 0.02, 0.03, 0.04, 0.05]);
+        let bias2_mock = Matrix::from_vec(layer2_n, 1, vec![0.01, 0.02, 0.03]);
+
+        layer1.fix_bias(bias1_mock);
+        layer1.fix_weights(weights1_mock);
+        layer2.fix_bias(bias2_mock);
+        layer2.fix_weights(weights2_mock);
+
         layer1.propagate(&input_mock);
         layer2.propagate(&layer1.neurons);
 
-        let linear_transform = &layer2.weights * &layer1.weights;
-        let bias_transform = (&layer2.weights * &layer1.biases) + &layer2.biases;
-
         print!("Neurons:{}", layer2.neurons);
-        let expected = (linear_transform * input_mock) + &bias_transform;
+        let expected =  Matrix::from_vec(3,1,vec![4.565, 10.65, 16.735]);
         print!("Expected: {}", expected);
-
         assert!(expected == layer2.neurons);
     }
 
