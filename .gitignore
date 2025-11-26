@@ -1,2 +1,7 @@
 /target
 Cargo.lock
+emnist/*
+*.bmp
+src/nn_prev.rs
+src/nn_prevL.rs
+src/main copy.rs

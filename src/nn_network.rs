@@ -56,14 +56,30 @@ impl NeuralNetwork {
     */
     /**
      * Treinamento da rede neural. Recebe os dados de entrada,
-     * propaga em toda a rede e executa o algoritmo de retropropagação.
-     *
+     * propaga em toda a rede, executa o algoritmo de retropropagação
+     * e ajusta os parâmetros com os gradientes
      */
     pub fn train(&mut self, input: Matrix, expected_output: Matrix) {
+        
+        self.classify(&input);
+        let gradients = self.generate_gradients(input, expected_output);
+        self.adjust_parameters(gradients);
+        
+    }
+
+    pub fn adjust_parameters(&mut self, gradients: VecDeque<Gradient>){
+        assert!(gradients.len() == self.layers.len()-1);
+        //zip: agrupa 2 iteradores. O laço é finalizado quanto um deles chega ao fim.
+        //No nosso caso, ambos terão o mesmo tamanho, dado o assert! acima.
+        for (layer, gradient) in self.layers.iter_mut().skip(1).zip(gradients) {
+            layer.adjust_parameters(gradient, self.learning_rate);
+        }
+    }
+
+    pub fn classify(&mut self, input: &Matrix)->&Matrix{
         assert!(!self.layers.is_empty());
-        let last_layer_index = self.layers.len() - 1;
-        //Propaga a primeira camada
-        self.layers[0].load_input(input);
+        //Propaga a primeira camada (considera que a primeira camada é uma camada oculta)
+        self.layers[0].propagate(input);
         //Propaga as camadas remanescentes
         for i in 1..self.layers.len() {
             //Separa em 2 slices: [0..i) e [i..len)
@@ -71,7 +87,12 @@ impl NeuralNetwork {
             let (prev_layers, layers_to_propagate) = self.layers.split_at_mut(i);
             layers_to_propagate[0].propagate(prev_layers[i - 1].neurons());
         }
-        //Limita o escopo dos slices para evitar erro de borrow na retropropagação
+        let output = self.layers.last();
+        output.expect("FAILED TO TAKE LAST LAYER").neurons()
+    }
+
+    pub fn generate_gradients(&mut self, input: Matrix, expected_output: Matrix)->VecDeque<Gradient>{
+        let last_layer_index = self.layers.len() - 1;
         let mut gradients: VecDeque<Gradient> = VecDeque::with_capacity(self.layers.len());
         {
             let (hidden_layers, output_layers) = self.layers.split_at_mut(last_layer_index);
@@ -81,27 +102,27 @@ impl NeuralNetwork {
                 &NeuralNetwork::cost_derivative_mse,
             );
             gradients.push_front(gradient);
-        };
+        }
 
         for i in (1..last_layer_index).rev() {
             //slices [0..i) e [i..len()-1) (Novamente lidando com borrow checker)
             let (initial_layers, current_and_done_layers) = self.layers.split_at_mut(i);
             let (current_layer, done_layers) = current_and_done_layers.split_at_mut(1);
 
+            //Para a primeira camada oculta, a ativação prévia é a entrada
+            let prev_activations = if i == 0 {
+                &input
+            } else {
+                initial_layers[i - 1].neurons()
+            };
+
             let gradient = current_layer[0].backpropagate_hidden_layer(
                 &done_layers[0].weights(),
                 &gradients[0].delta,
-                initial_layers[i - 1].neurons(),
+                prev_activations,
             );
             gradients.push_front(gradient);
         }
-
-        assert!(gradients.len() == self.layers.len() - 1);
-        let adjustable_layers = self.layers.iter_mut().skip(1);
-        //zip: agrupa 2 iteradores. O laço é finalizado quanto um deles chega ao fim.
-        //No nosso caso, ambos terão o mesmo tamanho, dado o assert! acima.
-        for (layer, gradient) in adjustable_layers.zip(gradients) {
-            layer.adjust_parameters(gradient, self.learning_rate);
-        }
+        gradients
     }
 }

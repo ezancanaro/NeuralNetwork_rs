@@ -1,3 +1,5 @@
+use core::f64;
+
 /**
  *  Copyright 2025 Eric Zancanaro
  *    
@@ -24,23 +26,25 @@ pub struct Gradient {
 }
 
 pub trait ActivationFunction {
-    fn activate(val: f64) -> f64;
+    fn activate(val: f64, z:&[f64]) -> f64;
     fn derivative(val: f64) -> f64;
 }
 
-pub struct Sigmoid {}
+pub struct Sigmoid {
+    zed_sum:f64
+}
 impl ActivationFunction for Sigmoid {
-    fn activate(val: f64) -> f64 {
+    fn activate(val: f64, _z:&[f64]) -> f64 {
         1.0 / (1.0 + std::f64::consts::E.powf(-val))
     }
     fn derivative(val: f64) -> f64 {
-        let sigma = Sigmoid::activate(val);
+        let sigma = Sigmoid::activate(val, &[1.0]);
         sigma * (1.0 - sigma)
     }
 }
 pub struct Relu {}
 impl ActivationFunction for Relu {
-    fn activate(val: f64) -> f64 {
+    fn activate(val: f64, _z:&[f64]) -> f64 {
         f64::max(0.0, val)
     }
     fn derivative(val: f64) -> f64 {
@@ -50,9 +54,22 @@ impl ActivationFunction for Relu {
         }
     }
 }
+
+pub struct Softmax {}
+impl ActivationFunction for Softmax {
+    fn activate(val: f64, z:&[f64]) -> f64 {
+        //Softmax com ajuste para estabilidade numérica ()
+        let max =z.iter().fold(f64::NEG_INFINITY, |acc, &val|acc.max(val));
+        let sum:f64 = z.iter().map(|&val|(val-max).exp()).sum();
+        (val-max).exp() / sum
+    }
+    fn derivative(_: f64) -> f64 {
+        1.0
+    }
+}
 pub struct Identity {}
 impl ActivationFunction for Identity {
-    fn activate(val: f64) -> f64 {
+    fn activate(val: f64, z:&[f64]) -> f64 {
         val
     }
     fn derivative(_: f64) -> f64 {
@@ -66,7 +83,7 @@ pub struct Layer {
     zed: Matrix,
     weights: Matrix,
     biases: Matrix,
-    activation_function: fn(f64) -> f64,
+    activation_function: fn(f64, z:&[f64]) -> f64,
     activation_derivative: fn(f64) -> f64, 
 }
 
@@ -131,13 +148,13 @@ impl Layer  {
         //activation = act_fn( bias + sum_i(input_neurons_i * weights_i) )
         // let weight_transpose = self.weights.transpose();
         let dot_product = &(self.weights) * &input_neurons; //A ordem importa (input * weights) geraria erro!
-        let biased_values = dot_product + &self.biases;
-        assert!(biased_values.rows() == self.neurons.rows());
+        
+        //Armazena o resultado para a fase de backprop
+        self.zed = dot_product + &self.biases;
+        assert!(self.zed.rows() == self.neurons.rows());
         //Biased_values deve ser uma matriz nx1
-        for i in 0..biased_values.rows() {
-            //Armazena o resultado para a fase de backprop
-            self.zed[i][0] = biased_values[i][0]; //z
-            self.neurons[i][0] = (self.activation_function)(biased_values[i][0]);
+        for i in 0..self.zed.rows() {
+            self.neurons[i][0] = (self.activation_function)(self.zed[i][0], &self.zed.data());
         }
     }
 

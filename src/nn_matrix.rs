@@ -49,6 +49,10 @@ impl Matrix {
     pub fn cols(&self) -> usize {
         self.cols
     }
+    pub fn data(&self) -> &Vec<f64>{
+        &self.data
+    }
+
     pub fn new(num_rows: usize, num_cols: usize) -> Matrix {
         Matrix {
             rows: num_rows,
