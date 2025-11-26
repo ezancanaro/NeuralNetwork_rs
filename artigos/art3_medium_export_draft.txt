@@ -1,0 +1,396 @@
+---
+
+Redes Neurais do Zero (em Rust): Parte 3 - Retropropagação
+Este artigo é a 3ª parte de uma série relatando a construção de uma rede neural na linguagem Rust. Parte 1. Parte 2.
+O autor do vídeo não estava brincando quando disse que leva um tempo para compreender completamente o algoritmo de retropropagação. Pessoalmente, a explicação provida no material fonte não foi suficiente para que eu pudesse visualizar a estrutura do código desse fragmento. Em especial, senti muita dificuldade em aplicar a transição de um único neurônio, a versão simplificada, para o caso de múltiplos neurônios com operações matriciais.
+Este artigo é uma tentativa de descrever todo o processo de aprendizagem pelo qual passei nessa trajetória, incluindo os erros e as frustrações encontradas ao tentar traduzir a matemática em código fonte.
+Mensurando o Desempenho da Rede
+Uma necessidade fundamental das redes neurais é mensurar o quão próxima da resposta correta o algoritmo está. Esse processo é modelado por uma função de custo: quanto menor o custo, mais próximo da resposta correta está o resultado. 
+A função de custo também pode ser compreendida como uma métrica do erro da rede neural. Portanto, o desempenho da rede neural é otimizado reduzindo o valor de erro. Na matemática, esse processo é conhecido por minimização.
+Utilizando um gráfico como auxiliar descritivo, a minimização de uma função y = f(x) pode ser feita escolhendo uma posição inicial (valor de x) e escolhendo uma direção de ajuste (esquerda ou direita) que leva a um valor reduzido o valor de y. Esse processo pode ser repetido iterativamente, ajustando o tamanho dos passos na direção desejada até alcançar um mínimo local.
+Ilustração de uma função unidimensional. Os ajustes são equivalentes a mover o ponto para a esquerda, reduzindo o valor de x, ou para a direita, aumentando o valor de x.A escolha aqui envolve apenas 2 direções pois o domínio de uma função com uma única variável é um espaço unidimensional: só podemos aumentar ou reduzir o valor de x para obter um novo y. Para uma função com múltiplas variáveis, como é o caso da rede neural com seus pesos e vieses, o espaço da função é multidimensional. 
+Nesse espaço a direção dos passos de minimização é descrita por um vetor, cujos componentes descrevem a variação de cada uma das variáveis de entrada da função. Esse vetor é denominado gradiente e nos diz em que direção devemos ajustar cada variável, cada peso e cada viés, para que o resultado da rede neural se aproxime do resultado desejado.
+Função multidimensional. A direção de ajuste de cada passo é definida por um vetor com as dimensões do espaço da função.Obs: Matematicamente o gradiente é um vetor que aponta a direção dos máximos da função.  Isso significa que, em uma rede neural, o ajuste deve ser feito na direção contrária através da subtração do gradiente.
+Como o número de pesos e vieses em uma rede neural estende-se além dos milhares, calcular todas as posições desse vetor de uma única vez é uma tarefa que parece inviável. O algoritmo de retropropagação oferece uma alternativa para que esse cálculo seja realizado iterativamente: partindo da camada de saída da nossa rede neural, o gradiente de cada camada pode ser calculado com base nos valores de sua vizinhança imediata.
+Retropropagação: Camada de Saída
+Embora eu não tenha compreendido completamente a explicação do vídeo original, uma coisa ficou clara: o cálculo da retropropagação da camada de saída da rede neural é distinto das camadas ocultas. 
+Esse detalhe é bem intuitivo quando consideramos a sequência de camadas: o resultado da camada final é diretamente comparável com o resultado esperado. Portanto, o erro dessa camada pode ser calculado com base nesse resultado. 
+Já as camadas ocultas não tem essa equivalência. A ativação da penúltima camada impacta apenas na ativação da camada seguinte, portanto, o erro dessa camada depende do erro da camada final. Isso se repete sucessivamente para todas as camadas anteriores: o erro da saída é propagado camada por camada na direção reversa. 
+
+---
+
+Bom, vamos revisar as definições. O objetivo da retropropagação é minimizar o resultado da função de custo. Para isso devemos encontrar a inclinação da função no ponto do resultado. Relembrando os conceitos iniciais de cálculo, a inclinação de uma função é a taxa de variação do resultado em função do valor de entrada. 
+Esse conceito é representado pelas derivadas: a derivada f'(x) indica a direção e magnitude da inclinação da função em torno do ponto x.
+A inclinação da função pode ser vista como a direção da linha no gráfico: para baixo ou para cima. O valor da derivada indica o quão íngreme são as redondezas da função naquele ponto.Para funções multivariadas, a taxa de variação em relação a cada variável é dada por derivadas parciais. Com essa memória ativada, podemos entrar no cálculo do gradiente da camada final.
+O gradiente da camada final é calculado com base em 3 fatores:
+Valor de ativação da camada anterior
+Pesos da camada de saída
+Vieses da camada de saída
+
+Novamente isso é bem intuitivo: o valor de ativação dessa camada é gerado pela combinação desses 3 fatores. Portanto, se eu preciso modificar o valor de saída para minimizar o valor de custo, ao menos 1 desses fatores deve ser ajustado.
+
+---
+
+A função de custo adotada nos vídeos é o erro quadrático médio. Nessa função, o custo Cₙ do resultado final é dado pelo quadrado da diferença entre a ativação da camada de saída (aₙ) e o resultado esperado (y):
+Obs: nas equações utilizadas, o subscrito n indica que a equação refere-se a n-ésima camada da rede neural.
+Para reduzir a diferença desses resultados precisamos ajustar os parâmetros da função: aₙ ou y. Como o resultado esperado é fixo, a única opção é ajustar o valor de aₙ. Formalmente a taxa de alteração no custo por modificações no valor de aₙ é dado pela derivada parcial em relação a variável: ∂Cₙ/∂a
+Como aₙ é o resultado de todo o processamento da rede neural, não podemos simplesmente modificar esse valor. Precisamos ajustar os componentes de aₙ e determinar seu efeito no resultado final:
+Equações para a obtenção da ativação de neurônios da camada n na rede neuralO valor de aₙ é constituído pela composição de 2 funções: a soma ponderada pelos pesos e vieses (zₙ) e a função de ativação  σ. Essa soma ponderada é nomeada agora para possibilitar uma representação mais compacta da derivada parcial: ∂aₙ/∂zₙ. Essa derivada representa o quanto uma alteração no valor da soma afeta o valor de aₙ.
+Como zₙ é uma função, precisamos saber o quanto cada componente dessa soma ponderada afeta o seu valor. Aqui podemos manipular o valor dos pesos wₙ e dos vieses bₙ. Portanto, a taxa de variação de zₙ é dada por duas derivadas parciais: a variação em relação aos pesos é dada por ∂zₙ\∂wₙ e a taxa de variação em relação aos vieses é dada por ∂zₙ\∂bₙ.
+O objetivo é obter o gradiente da função de custo em relação aos pesos e vieses da camada, pois são os únicos parâmetros que podemos alterar diretamente. Portanto, precisamos obter ∂Cₙ\∂wₙ: a derivada parcial de Cₙ em relação aos pesos; e ∂Cₙ\∂bₙ derivada parcial de Cₙ em relação aos vieses. 
+Essas derivadas parciais são obtidas através da aplicação da regra da cadeia, agrupando as variáveis de cada componente da saída:
+Equações para os gradientes dos pesos e vieses da camada de saídaEmbora a definição dessas variadas já seja dada pela fonte principal, as equações não são complexas de diferenciar na mão.
+Para ∂zₙ\∂wₙ: em uma derivada parcial, consideramos apenas a variável relacionada (w), tratando as demais como uma constante qualquer. Nessa equação aplicamos 2 regras básicas de derivadas: a derivada de uma constante é sempre 0 e a derivada de uma potência é dada pela regra  d/dx(xⁿ) = n . xⁿ⁻¹
+No termo ∂aₙ/∂zₙ, o valor da derivada depende da função de ativação (σ) utilizada. Para o termo genérico, esse valor é representado por σ'(zₙ): a aplicação do valor de entrada à derivada da função σ.
+O termo ∂Cₙ/∂aₙ traz um detalhe que pega muito estudante de cálculo de calça curta: devemos considerar os termos entre parênteses (a - y) como uma função interna f. Se temos 2 funções, a derivada final deve ser obtida pela aplicação da regra da cadeia: ∂Cₙ/∂aₙ = ∂Cₙ/∂f . ∂f/∂aₙ.
+Diferenciação da função de custo do erro quadrático médio.Na derivada parcial ∂zₙ\∂bₙ tratamos wₙ e aₙ₋₁ como constantes, portanto o produto (wₙ . aₙ₋₁) tem derivada 0. A derivada do termo bₙ é otida pela regra da potência: d\dbₙ(bₙ) = 1bₙ⁰ = 1
+Assim temos todos os componentes matemáticos para implementar a retropropagação. Finalmente podemos voltar a ver código aqui. Para começar, o cálculo depende do valor da soma ponderada z, que é calculado durante a propagação dos valores na rede neural, implementada no artigo anterior. Não faz muito sentido recalcular esse valor, portanto modificamos o código das camadas para armazenar o valor dessa soma durante a propagação:
+pub struct Layer {
+    neurons: Matrix,
+    zed: Matrix,            //Termo z na retropropagação
+    weights: Matrix,
+    biases: Matrix,
+    activation_function: fn(f64) -> f64,
+    activation_derivative: fn(f64) -> f64, 
+}
+
+pub fn propagate(&mut self, input_neurons: &Matrix) 
+        let dot_product = &(self.weights) * &input_neurons; 
+        let biased_values = dot_product + &self.biases;
+        assert!(biased_values.rows() == self.neurons.rows());
+        //Biased_values deve ser uma matriz nx1
+        for i in 0..biased_values.rows() {
+            //Armazena o resultado para a fase de backprop
+            self.zed[i][0] = biased_values[i][0]; 
+            self.neurons[i][0] = (self.activation_function)(biased_values[i][0]);
+        }
+    }
+Um detalhe importante é que a derivada parcial deve ser tomada em relação a cada um dos pesos e vieses da camada de saída. Portanto, podemos visualizar essas derivadas em formato de matrizes:
+Representação matricial das derivadas parciais obtidas durante a retropropagação. O operador ⊙ representa o produto elemento a elemento das matrizesDepois disso podemos iniciar a implementação da camada de saída da rede neural. Para esse cálculo, nossa função deve receber 3 parâmetros:
+1. O valor de saída esperado para nossa rede
+2. O valor de ativação da camada anterior
+3. A derivada da função de custo
+Ela retornará o gradiente dessa camada, representado por uma única matriz. Implementamos a função com uma tradução direta das derivadas aplicadas a cada neurônio da nossa rede neural.
+pub struct Layer {
+    neurons: Matrix,
+    ...,
+    weight_derivatives: Matrix, // Gradiente de erro dos pesos da camada
+}
+
+pub fn cost_derivative(activation_val: f64, expected_val: f64) -> f64 {
+        2 * (activation_val - expected_val)
+}
+
+pub fn backpropagate_output_layer(
+        &mut self,
+        expected: &Matrix,
+        prev_activations: &Matrix,
+        cost_derivative: impl Fn(f64, f64) -> f64,
+    ) {
+        let mut deltas = Matrix::new(self.neurons.rows(), 1)
+        for i in 0..self.neurons.rows() {
+            //∂C/∂a = 2(a - y) - Derivada parcial de C por a
+            let c_a_partial_derivative = 
+              cost_derivative(self.neurons[i][0], expected[i][0]);
+            //∂aL/∂z = activation'(z) - Derivada parcial de a por z
+            let a_zed_partial_derivative = 
+              self.activation.derivative(self.zed[i][0]);
+            //δ = hadamard_product(∂C/∂a, ∂aL/∂z).
+            //Detalhe: o vetor delta é a derivada em função dos viéses 
+            //∂C/∂b = ∂z/∂b * ∂a/∂z * ∂C/∂a já que ∂z/∂b = 1
+            deltas[i][0] = c_a_partial_derivative * a_zed_partial_derivative;
+            for j in 0..self.weights.cols() { 
+                //Para cada peso, calcula a derivada parcial 
+                //em relação ao valor do neurônio
+                self.weight_derivatives[i][j] = 
+                  prev_activations[j][0] * deltas[i][0];
+            }
+        }
+    }
+Existem 2 detalhes dignos de nota nessa implementação:
+1. O cálculo da derivada parcial em relação aos vieses está implícito na função. Esse gradiente é armazenado na matriz deltas 
+2. O gradiente dos pesos pode ser representado como uma matriz, que armazena o valor de ajuste de cada camada. Essa intuição não estava clara na explicação inicial, que trata o gradiente como um vetor único para todos os parâmetros da rede.
+Camadas Ocultas
+Na camada de saída a taxa de variação da função de custo é calculada com base na ativação final (aₙ) da rede. Precisamos agora repetir o processo para as camadas ocultas, determinando a taxa de variação da função de custo em relação a ativação de cada camada. Uma rede neural composta por N camadas, ordenadas de 0 a n, pode ser representadas pelo conjunto {0, 1, …, n-2, n-1, n}.
+A taxa de variação da função de custo em relação à camada final (∂C/∂aₙ) já foi calculada previamente. Como a retropropagação funciona em passos "para trás", o próximo gradiente a ser calculado refere-se à camada anterior: ∂C/∂aₙ₋₁. Retomando a definição da ativação aₙ = σ(wₙ . aₙ₋₁ + bₙ), sabemos que o efeito da ativação da camada n-1 se manifesta apenas na soma ponderada, nosso zₙ. Portanto, a taxa de variação da função de custo em relação a ativação aₙ₋₁ é dado em termos da taxa de variação de zₙ em relação à ativação aₙ₋₁: ∂zₙ/∂aₙ₋₁.
+Como o valor final da rede continua sendo afetado pelos parâmetros da camada de saída, os demais termos da regra da cadeia permanecem na equação:
+O primeiro detalhe dessa equação: o produto em destaque já foi calculado quando implementamos a retropropagação para a camada de saída. Uma repetição similar será encontrada se expandirmos a equação para a camada n-2: o produto ∂aₙ₋₁/∂zₙ₋₁ . ∂zₙ₋₁ /∂aₙ₋₁ será repetido. Essas repetições ocorrem sucessivamente a cada passo de propagação. Por conta disso, é comum ver o produto representado pelo símbolo 𝜹 nos materiais de referência.
+Para não recalcular esses valores toda vez, adicionamos uma matriz delta como membro da struct que representa nossas camadas. Também ajustamos a função de retropropagação da camada de saída para armazenar esses valores:
+pub struct Layer {
+    neurons: Matrix,
+    zed: Matrix,            //Variável z na retropropagação
+    deltas: Matrix,         //Vetor de erro / gradiente de vieses.
+    weight_derivatives: Matrix, // Gradiente de erro dos pesos da camada 
+    weights: Matrix,
+    biases: Matrix,
+    activation_function: fn(f64) -> f64,
+    activation_derivative: fn(f64) -> f64, 
+}
+pub fn backpropagate_output_layer(...) {
+    //let mut deltas = ... Removemos a variável temporária
+    for i in 0..self.neurons.rows() {
+        ///...
+        self.deltas[i][0] = 
+          c_a_partial_derivative * a_zed_partial_derivative;
+        for j in 0..self.weights.cols() { 
+            self.weight_derivatives[i][j] = 
+              prev_activations[j][0] * self.deltas[i][0];
+        }
+    }
+}
+É essa repetição de termos que justifica a lógica da retropropagação: os termos são calculados uma única vez e propagados para trás.
+Para obter o valor da derivada ∂zₙ/∂aₙ₋₁ consideramos a definição de zₙ. A lógica para a diferenciação é exatamente a mesma usada anteriormente, com a única alteração sendo o termo que estamos diferenciando:
+Novamente, não podemos alterar diretamente o valor da ativação da camada,  portanto precisamos "quebrar" a derivada ∂zₙ/∂aₙ₋₁ para tratá-la em relação aos parâmetros ajustáveis: pesos e vieses. Usamos os mesmos passos descritos para a camada de saída e obtemos as derivadas parciais em relação aos pesos e vieses da penúltima camada:
+Para esta equação, as derivadas parciais ∂aₙ₋₁/∂zₙ₋₁, ∂zₙ₋₁/∂wₙ₋₁ e ∂zₙ₋₁/∂bₙ₋₁ são exatamente as mesmas obtidas para a camada de saída n, portanto podemos replicar as fórmulas obtidas naquela seção.
+A grande diferença para esse cálculo em relação ao gradiente da camada de saída está na conexão dos neurônios dessa camada. Para a camada final, o valor de ativação dos neurônios forma um vetor que tem uma relação direta com o vetor do resultado esperado. Se imaginamos o resultado esperado como um conjunto de neurônios, podemos dizer que cada neurônio da camada de saída está diretamente conectado com apenas 1 neurônio do resultado: seu par na mesma posição. Portanto, a alteração do valor de um neurônio da camada de saída impacta apenas 1 "neurônio" do resultado esperado.
+As "conexões" da camada de saída relacionam cada neurônio ao sinal equivalente no resultado esperado.Para as camadas ocultas, isso não é verdade. Na nossa rede neural densa, cada neurônio da camada n-1 está conectado com todos os neurônios da camada n. Isso quer dizer que alterações no valor de um neurônio na camada n-1 impactam o valor de todos os neurônios da camada n. Para determinar como o valor da ativação aₙ₋₁ impacta o valor da função de custo, precisamos traçar como esse valor altera o sinal de cada neurônio da camada seguinte.
+Para camadas ocultas, o sinal de um neurônio está conectado com todos os sinais da próxima camada. Para determinar o erro deste sinal, é necessário seguir todas as conexões com a próxima camada.No cálculo do gradiente, para cada neurônio k, esse efeito é expressado pelo somatório de todas as conexões do neurônio com a camada seguinte:
+Retomando o código,  a função de retropropagação para as camadas ocultas depende de 2 fatores:
+Da camada seguinte, de onde deve obter os valores do produto 𝜹 e dos pesos da camada. A camada é fornecida através de uma referência emprestada &next_layer 
+Os valores de ativação da camada anterior, transmitidos diretamente em formato de matriz
+
+pub fn backpropagate_hidden_layer(
+        &mut self,
+        next_layer: &Layer<T>,
+        prev_activations: &Matrix,
+    ) {
+    //let weight_transpose = next_layer.weights.transpose();
+    for i in 0..self.neurons.rows() {
+        //∂aL/∂z = activation'(z) - Derivada parcial de a por z
+        let a_zed_partial_derivative = 
+          self.activation.derivative(self.zed[i][0]);
+        let mut c_a_partial_derivative = 0.0;
+        //Somatório ∂z/∂a_(l-1) * δ_l
+        for j in 0..next_layer.weights.rows() {
+            c_a_partial_derivative += 
+              next_layer.weights[j][i] * next_layer.deltas[j][0];
+        }
+        //δ = ∂a_(l-1)/∂z_(l-1) * sum(∂z_l/∂a_(l-1) * δl)
+        self.deltas[i][0] = c_a_partial_derivative * a_zed_partial_derivative;
+        for j in 0..self.weights.cols() {
+            //∂z/∂w = a_(L-1).
+            //∂C/∂Cw_(l-1) = ∂z_(l-1)/∂w_L-1 * ∂a_(l-1)/∂z_(l-1) * sum(∂z_l/∂a_(l-1) * δl)
+            //∂C/∂Cw_(l-1) = a_(L-1) * δ
+            self.weight_derivatives[i][j] = prev_activations[j][0] * self.deltas[i][0];
+        }
+    }
+}
+Detalhe importante: na implementação direta da multiplicação de matrizes, a matriz de pesos deveria ser transposta para que o número de colunas seja equivalente ao número de linhas do vetor delta. A grande questão é que a operação de transposição é desnecessária nessa implementação. Podemos simplesmente acessar a matriz invertendo os índices, de forma que i represente a coluna e j represente a linha. Essa equivalência é sutilmente apontada pelo material do 3b1b na inversão dos índices na representação da matriz de pesos.
+Those indices, jk, might feel backwards at first, but it lines up with how you'd index the weight matrix
+Um ponto chave do algoritmo de retropropagação é a equivalência do vetor deltas com o gradiente de custo em relação aos vieses da camada. É fácil de ignorar essa correspondência na explicação apresentada no material base pois a variável 𝜹 nunca é definida no processo. Novamente, a simplificação auxilia na compreensão intuitiva mas não é a melhor fonte para uma implementação desse algoritmo.
+A escrita dos testes da retropropagação segue a mesma lógica dos testes de propagação: fixamos os valores das camadas de nossa rede neural e utilizamos uma calculadora de matrizes para gerar o resultado esperado. O código foi anexado no final do artigo.
+Treinando a Rede Neural (e a paciência)
+Agora que todos os cálculos foram traduzidos para uma implementação de código só nos resta "montar os bloquinhos" para juntar tudo na implementação do treinamento, certo? Começamos com uma struct para representar a rede neural:
+struct NeuralNetwork {
+    layers: Vec<Layer<Relu>>, //Camadas com função de ativação ReLu
+    learning_rate: f64        //Hiperparametro
+}
+Criamos a função de treinamento passo a passo. A função deverá receber como parâmetro uma matriz representando a entrada e uma segunda matriz com o resultado esperado.
+Primeiro, a função deve classificar os dados de entrada e gerar sua saída. Iniciamos propagando a representação matricial da entrada na primeira camada de nossa rede neural para gerar a primeira representação. Depois precisamos apenas propagar essa representação camada por camada, percorrendo a lista completa sequencialmente:
+pub fn classify(&mut self, input: Matrix) {
+    assert!(!self.layers.is_empty());
+    //Propaga a primeira camada com a entrada
+    //(considera que a primeira camada é uma camada oculta)
+    self.layers[0].propagate(&input);
+    //Propaga as camadas remanescentes com a ativação anterior
+    for i in 1..self.layers.len() {
+        self.layers[i].propagate(self.layers[i-1].neurons());
+    }
+}
+Infelizmente não é tão simples.
+No último artigo apresentei parte das regras de propriedade da linguagem que formam um controle robusto de memória. Outra seção dessas regras mostra as caras nesse erro, tratando agora do compartilhamento de memória:
+Um objeto pode conter n referências imutáveis emprestadas
+Apenas 1 referência mutável pode ser emprestada em um dado escopo.
+Se houve um empréstimo mutável, não é possível emprestar uma referência imutável no mesmo escopo. O mesmo é válido na direção oposta.
+
+Essencialmente, as regras acima garantem que múltiplos usuários podem ler o conteúdo de uma seção de memória simultaneamente, desde que nenhum delas queira escrever nessa seção. Assim que alguém declara intenção de escrita via empréstimo mutável, a linguagem impede que outros usuários leiam aquele endereço de memória, ou declarem intenção de escrita, até que as operações de escrita (o escopo do empréstimo) sejam finalizadas. Isso garante que não haverão tentativas simultâneas de escrita, gerando condições de corrida, e que os leitores não acessarão memória inválida.
+O erro se dá pela definição da função propagate:
+pub fn propagate(&mut self, input_neurons: &Matrix)
+Seguindo a definição, o parâmetro self (o objeto no qual o método é chamado) deve ser uma referência mutável. Isso é auto evidente, já que a propagação deverá alterar a camada. O ponto de conflito aqui é que o acesso aos elementos de um array de camadas da rede neural é feito através de empréstimo implícito do array, utilizando o tipo exigido pelo elemento no contexto. Isso significa que temos uma referência mutável ao array self.layers para obter a camada atual. 
+Em contraste com essa referência, a matriz de neurônios da camada anterior é recebida como uma referência imutável. Como a camada anterior está armazenada no mesmo vetor, temos uma referência imutável ao array no acesso self.layers[i-1].neurons(), portanto violamos a regra 3 e o compilador nos impede de fazer m*.
+Para que a operação tenha sucesso precisamos de 2 referências distintas aos elementos. Essas referências podem ser obtidas partindo o array em 2 fatias: a primeira contém as camadas que já foram propagadas, enquanto a segunda apresenta as camadas que ainda devem processar os dados. Como uma das referências deve ser mutável, precisamos seguir a sugestão do compilador e utilizar o método `split_at_mut`. Utilizando o índice da camada atual como parâmetro dessa função temos exatamente as janelas desejadas, resultando na implementação abaixo:
+pub fn classify(&mut self, input: &Matrix) {
+    assert!(!self.layers.is_empty());
+    //Propaga a primeira camada com a entrada
+    //(considera que a primeira camada é uma camada oculta)
+    self.layers[0].propagate(&input);
+    //Propaga as camadas remanescentes
+    for i in 1..self.layers.len() {
+        //Separa em 2 slices: [0..i) e [i..len)
+        let (prev_layers, layers_to_propagate) = self.layers.split_at_mut(i);
+        layers_to_propagate[0].propagate(prev_layers[i - 1].neurons());
+    }
+}
+Agora temos 1 referência mutável ao slice layers_to_propagate, cujo primeiro elemento é a camada que será propagada no momento, e uma referência imutável a prev_layers, que inclui todas as camadas já processadas. 
+Com a classificação da entrada feita pela propagação, agora é necessário calcular e retropropagar o erro para permitir a rede aprenda algo com essa operação. Já implementamos métodos distintos para a retropropagação na camada de saída e nas camadas ocultas. Começamos então pela camada de saída da rede neural:
+//Derivada da função de custo
+pub fn cost_derivative_mse(x: f64, y: f64) -> f64 {
+        2.0 * (x - y)
+}
+
+pub fn generate_gradients(&mut self, input: Matrix, expected_output: Matrix) {
+    //Limita o escopo dos slices para evitar erro de borrow na retropropagação
+    {
+        let (hidden_layers, output_layers) = 
+          self.layers.split_at_mut(last_layer_index);
+        
+        output_layers[0].backpropagate_output_layer(
+            &expected_output,
+            hidden_layers[last_layer_index - 1].neurons(),
+            NeuralNetwork::cost_derivative_mse,
+        );
+    }
+    ...
+}
+Usamos a mesma técnica de fatiar o array de camadas para evitar os erros devido ao empréstimo mutável da camada de saída. Para evitar que esse problema seja constante nos próximos passos, utilizei um bloco de código para criar um escopo limitado e reduzir o tempo de vida dos slices criados para essa etapa. Isso garante que não existirão referências ao array de camadas após essa seção de código. Pensando logicamente, extrair essa seção de código.
+Com a camada de saída resolvida, percorremos as camadas ocultas de trás para a frente, executando a retropropagação até a 3ª camada:
+pub fn generate_gradients(&mut self, input: Matrix, expected_output: Matrix) {
+    //Limita o escopo dos slices para evitar erro de borrow na retropropagação
+    {
+        let (hidden_layers, output_layers) = 
+          self.layers.split_at_mut(last_layer_index);
+        
+        output_layers[0].backpropagate_output_layer(
+            &expected_output,
+            hidden_layers[last_layer_index - 1].neurons(),
+            NeuralNetwork::cost_derivative_mse,
+        );
+    }
+    for i in (2..last_layer_index).rev() { 
+        //Inverte o range para percorrer de N até 2
+        //slices [0..i) e [i..len()] (Novamente lidando com borrow checker)
+        let (propagation_layers, done_layers) = self.layers.split_at_mut(i);
+        let (coming_layers, current_layers) = 
+            propagation_layers.split_at_mut(i - 1);
+
+        current_layers[0]
+            .backpropagate_hidden_layer(
+              &done_layers[0], 
+              coming_layers[i - 2].neurons());
+    }
+    let (remaining_layers, done_layers) = self.layers.split_at_mut(2);
+    ...//tratar segunda camada da rede
+}
+Nesse ponto a tática de criar múltiplos slices para o array de camadas começa a demonstrar sua fragilidade. Para a retropropagação das camadas ocultas, é necessário obter 3 referências distintas:
+1. A camada atual: i-1
+2. A camada posterior: i, de onde precisamos obter os pesos e o vetor delta
+3. A camada anterior: i-2, contendo os valores de ativação
+Isso torna o código de divisão do array dentro do laço de repetição bem confuso, sendo necessário manipular 4 slices distintos e equilibrar os índices de cada um deles em relação ao índice da camada inicial. Também precisamos tratar o caso da 2ª camada separadamente, do contrário o índice [i-2] resultará em uma posição obviamente inválida (1–2 = -1).
+Foi aqui que eu decidi dar um passo atrás e repensar a definição dessas funções antes de brigar novamente com o compilador.
+Refatoração do Código das Camadas
+Um primeiro ponto que pode melhorar a clareza do código é desvincular os gradientes gerados pela retropropagação da própria camada. Isso é muito relevante pois, em uma aplicação real, o valor final de ajuste dos parâmetros da camada não é dado pelos gradientes de um único caso de treinamento, mas sim da média dos gradientes gerados para cada caso apresentado à nossa rede.
+Para que isso seja possível, a função de retropropação deve retornar os gradientes calculados para os pesos e para os vieses da camada. Agrupamos os dois em uma struct de dados e ajustamos nossa camada e as funções de retropropagação apropriadamente:
+pub struct Gradient {
+    pub weight: Matrix,
+    pub delta: Matrix,
+}
+//Removemos delta e weight_derivatives da struct
+pub struct Layer {
+    neurons: Matrix,
+    zed: Matrix,
+    weights: Matrix,
+    biases: Matrix,
+    activation_function: fn(f64) -> f64,
+    activation_derivative: fn(f64) -> f64, 
+}
+
+pub fn backpropagate_output_layer(
+    &mut self,
+    expected: &Matrix,
+    prev_activations: &Matrix,
+    cost_derivative: &dyn Fn(f64, f64) -> f64,
+) -> Gradient {
+    let mut weight_derivatives = 
+      Matrix::new(self.weights.rows(), self.weights.cols());
+    let mut deltas = Matrix::new(self.neuron_qty(), 1);
+    ... //Cálculo permanece o mesmo
+    //Retorna um objeto Gradient transportando as matrizes
+    Gradient {
+        weight: weight_derivatives,
+        delta: deltas,
+    }
+}
+
+pub fn backpropagate_hidden_layer(
+    &mut self,
+    next_layer_weights: &Matrix, //Separa pesos do gradiente
+    next_layer_deltas: &Matrix, 
+    prev_activations: &Matrix,
+) -> Gradient {
+    let mut weight_derivatives = 
+      Matrix::new(self.weights.rows(), self.weights.cols());
+    let mut deltas = Matrix::new(self.neuron_qty(), 1);
+    ... //Cálculo permanece o mesmo
+    Gradient {
+        weight: weight_derivatives,
+        delta: deltas,
+    }
+}
+Nossa função de treinamento é ajustada para armazenar esses gradientes em uma coleção temporária. Também consegui simplificar a gestão dos índices das camadas no processamento das camadas ocultas, cortando o array em torno da camada atual de processamento:
+1. Um slice contendo as camadas que serão processadas posteriormente é gerado quando dividimos no índice da camada atual **i**. A camada i-1 é sempre o último elemento desse vetor, portanto [i-1] é um acesso válido enquanto nosso range não passa de 1;
+2. A camada atual é isolada das demais pela criação de um *slice* com um único elemento. Nessa operação, a camada i+1 é o primeiro elemento do segundo *slice*. O acesso ao índice [0] é sempre válido se o range inicia na penúltima camada do array;
+3. Por fim, simplificamos o acesso ao gradiente de erros da camada posterior com a ordem de adição dos elementos nesse vetor. Se adicionamos sempre no início da coleção, o último gradiente calculado será sempre obtido pelo primeiro elemento do vetor. Essa lógica de inserção é o motivo de utilizarmos VecDeque em lugar de Vec para armazenar os gradientes.
+pub fn generate_gradients(&mut self, input: Matrix, expected_output: Matrix) 
+    -> VecDeque<Gradient> { //Retorna os gradientes
+    
+    let mut gradients: VecDeque<Gradient> = 
+      VecDeque::with_capacity(self.layers.len());
+    {
+        let (hidden_layers, output_layers) = 
+            self.layers.split_at_mut(last_layer_index);
+        let gradient = output_layers[0].backpropagate_output_layer(
+            &expected_output,
+            hidden_layers[last_layer_index - 1].neurons(),
+            &NeuralNetwork::cost_derivative_mse,
+        );
+        //Adiciona no início da "fila"
+        gradients.push_front(gradient);
+    }
+    //Usando rev() para percorrer as camadas de trás para frente
+    for i in (0..last_layer_index).rev() {
+        
+        //slices [0..i) e [i..len()-1) 
+        let (initial_layers, current_and_done_layers) = 
+            self.layers.split_at_mut(i);
+        let (current_layer, done_layers) = 
+            current_and_done_layers.split_at_mut(1);
+        //Para a primeira camada oculta, a ativação prévia é a entrada
+        let prev_activations = if i == 0 {
+            &input
+        } else {
+            initial_layers[i - 1].neurons()
+        };
+
+        let gradient = current_layer[0].backpropagate_hidden_layer(
+            &done_layers[0].weights(),
+            &gradients[0].delta,
+            prev_activations,
+        );
+        gradients.push_front(gradient);
+    }
+    gradients
+}
+Após a geração dos gradientes a rede neural deve ser ajustada. 
+pub fn adjust_parameters(&mut self, VecDeque<Gradient>)
+  {
+    assert!(gradients.len() == self.layers.len());
+    //zip: agrupa 2 iteradores. 
+    //O laço é finalizado quando um deles chega ao fim.
+    //No nosso caso, ambos terão o mesmo tamanho, dado o assert! acima.
+    for (layer, gradient) in self.layers.iter_mut().zip(gradients) {
+        layer.adjust_parameters(gradient, self.learning_rate);
+    }
+}
+//impl struct Layer 
+pub fn adjust_parameters(&mut self, gradients: Gradient, learning_rate: f64) {
+    //Ajusta os pesos
+    self.weights -= &gradients.weight.scalar_product(learning_rate);
+    //Ajusta os viéses
+    self.biases -= &gradients.delta.scalar_product(learning_rate);
+}
+Finalmente temos a função de treinamento implementada:
+pub fn train(&mut self, input: Matrix, expected_output: Matrix) 
+    self.classify(&input);
+    let gradients = self.generate_gradients(input, expected_output);
+    self.adjust_parameters(gradients);
+}
