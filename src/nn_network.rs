@@ -33,8 +33,16 @@ impl NeuralNetwork {
         }
     }
 
+    pub fn num_layers(&self) -> usize {
+        self.layers.len()
+    }
     pub fn add_layer(&mut self, layer: Layer) {
         self.layers.push(layer);
+    }
+
+    pub fn borrow_layer(&self, layer: usize) -> &Layer {
+        assert!(layer > 0 && layer <= self.layers.len());
+        &self.layers[layer - 1]
     }
 
     pub fn cost_derivative_mse(x: f64, y: f64) -> f64 {
@@ -60,23 +68,46 @@ impl NeuralNetwork {
      * e ajusta os parâmetros com os gradientes
      */
     pub fn train(&mut self, input: Matrix, expected_output: Matrix) {
-        
         self.classify(&input);
-        let gradients = self.generate_gradients(input, expected_output);
-        self.adjust_parameters(gradients);
-        
+        let mut gradients = self.generate_gradients(input, expected_output);
+        self.adjust_parameters(&mut gradients);
     }
 
-    pub fn adjust_parameters(&mut self, gradients: VecDeque<Gradient>){
-        assert!(gradients.len() == self.layers.len()-1);
+    pub fn train_batch(
+        &mut self,
+        input: Matrix,
+        expected_output: Matrix,
+        cur_gradients: &mut VecDeque<Gradient>,
+    ) {
+        self.classify(&input);
+        let gradients = self.generate_gradients(input, expected_output);
+
+        if cur_gradients.is_empty() {
+            cur_gradients.clone_from(&gradients);
+        } else {
+            cur_gradients
+                .iter_mut()
+                .zip(gradients)
+                .for_each(|(cur_gradient, gradient)| {
+                    cur_gradient.weight += &gradient.weight;
+                    cur_gradient.delta += &gradient.delta;
+                });
+        }
+    }
+
+    pub fn adjust_parameters(&mut self, gradients: &mut VecDeque<Gradient>) {
+        assert!(gradients.len() == self.layers.len() - 1);
         //zip: agrupa 2 iteradores. O laço é finalizado quanto um deles chega ao fim.
         //No nosso caso, ambos terão o mesmo tamanho, dado o assert! acima.
         for (layer, gradient) in self.layers.iter_mut().skip(1).zip(gradients) {
             layer.adjust_parameters(gradient, self.learning_rate);
         }
+        
+   
     }
 
-    pub fn classify(&mut self, input: &Matrix)->&Matrix{
+
+    pub fn classify(&mut self, input: &Matrix) -> &Matrix {
         assert!(!self.layers.is_empty());
         //Propaga a primeira camada (considera que a primeira camada é uma camada oculta)
         self.layers[0].propagate(input);
@@ -91,7 +122,11 @@ impl NeuralNetwork {
         output.expect("FAILED TO TAKE LAST LAYER").neurons()
     }
 
-    pub fn generate_gradients(&mut self, input: Matrix, expected_output: Matrix)->VecDeque<Gradient>{
+    pub fn generate_gradients(
+        &mut self,
+        input: Matrix,
+        expected_output: Matrix,
+    ) -> VecDeque<Gradient> {
         let last_layer_index = self.layers.len() - 1;
         let mut gradients: VecDeque<Gradient> = VecDeque::with_capacity(self.layers.len());
         {
@@ -101,6 +136,7 @@ impl NeuralNetwork {
                 hidden_layers[last_layer_index - 1].neurons(),
                 &NeuralNetwork::cost_derivative_mse,
             );
+            // println!("LL Gradients are 0 ? Weights: {}, Biases: {}", gradient.weight.is_zero(),gradient.delta.is_zero());
             gradients.push_front(gradient);
         }
 
@@ -121,8 +157,26 @@ impl NeuralNetwork {
                 &gradients[0].delta,
                 prev_activations,
             );
+            // println!("La Gradients are 0 ? Weights: {}, Biases: {}", gradient.weight.is_zero(),gradient.delta.is_zero());
             gradients.push_front(gradient);
         }
         gradients
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope. (Rust Book)
+    use super::*;
+    #[test]
+    fn test_train() {
+        // let mut network = NeuralNetwork::new(2, 0.4);
+        // println!("Adicionando Camadas!");
+        // //let input_layer = Layer::new::<Relu>(784, 784);
+        // let hidden_layer1 = Layer::new::<Relu>(784, 56);
+        // let hidden_layer2 = Layer::new::<Relu>(56, 56);
+        // let hidden_layer3 = Layer::new::<Relu>(56, 56);
+        // // let output_layer = Layer::new::<Sigmoid>(128, 10);
+        // let output_layer = Layer::new::<Relu>(56, 10);
     }
 }
