@@ -1,3 +1,5 @@
+use core::f64;
+use core::num;
 /**
  *  Copyright 2025 Eric Zancanaro
  *    
@@ -28,7 +30,7 @@ const FMT_NUM_WIDTH: usize = 8;
 const FMT_NUM_PRECISION: usize = 3;
 const EPSILON: f64 = 1e-9; //Usado para implementar comparação absoluta de floats. Valor obtido
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Matrix {
     rows: usize,
     cols: usize,
@@ -49,8 +51,12 @@ impl Matrix {
     pub fn cols(&self) -> usize {
         self.cols
     }
-    pub fn data(&self) -> &Vec<f64>{
+    pub fn data(&self) -> &Vec<f64> {
         &self.data
+    }
+    pub fn data_mov(&mut self) -> Vec<f64> {
+        let num_el: usize = self.num_elements();
+        std::mem::replace(&mut self.data, vec![0.0; num_el])        
     }
 
     pub fn new(num_rows: usize, num_cols: usize) -> Matrix {
@@ -197,12 +203,109 @@ impl Matrix {
         }
         result
     }
-    
-    pub fn mut_scalar_product(&mut self, scalar: f64) {
+
+    pub fn mut_scalar_product(&mut self, scalar: f64) -> &Matrix {
         for i in 0..self.num_elements() {
             self.data[i] = self.data[i] * scalar;
         }
+        self
     }
+
+    pub fn map(self, f: fn(f64) -> f64) -> Matrix {
+        let mut mat = Matrix {
+            rows: self.rows,
+            cols: self.cols,
+            data: vec![0.0; self.num_elements()],
+        };
+        for i in 0..self.num_elements() {
+            mat.data[i] = f(self.data[i]);
+        }
+        mat
+    }
+
+    pub fn mut_map(&mut self, f: fn(f64) -> f64) {
+        for i in 0..self.num_elements() {
+            self.data[i] = f(self.data[i]);
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.data.iter().all(|v| *v == 0.0)
+    }
+
+    pub fn zero(&mut self) {
+        for i in 0..self.num_elements() {
+            self.data[i] = 0.0;
+        }
+    }
+
+    pub fn mut_translate_right(&mut self, num_cols: usize) {
+        assert!(num_cols <= self.cols);
+        for i in 0..self.rows {
+            for j in (num_cols..self.cols).rev() {
+                self[i][j] = self[i][j - num_cols];
+                self[i][j - num_cols] = 0.0;
+            }
+        }
+    }
+    pub fn mut_translate_left(&mut self, num_cols: usize) {
+        assert!(num_cols <= self.cols);
+        for i in 0..self.rows {
+            for j in 0..self.cols - num_cols {
+                self[i][j] = self[i][j + num_cols];
+                self[i][j + num_cols] = 0.0;
+            }
+        }
+    }
+    pub fn mut_translate_down(&mut self, num_rows: usize) {
+        assert!(num_rows <= self.cols);
+        for i in (num_rows..self.rows).rev() {
+            for j in 0..self.cols {
+                self[i][j] = self[i - num_rows][j];
+                self[i - num_rows][j] = 0.0;
+            }
+        }
+    }
+    pub fn mut_translate_up(&mut self, num_rows: usize) {
+        assert!(num_rows <= self.cols);
+        for i in 0..self.rows - num_rows {
+            for j in 0..self.cols {
+                self[i][j] = self[i + num_rows][j];
+                self[i + num_rows][j] = 0.0;
+            }
+        }
+    }
+    
+    pub fn rotate(self, theta: f64) -> Matrix {
+        let mut rotated = Matrix { rows:self.rows, cols: self.cols, data: vec![0.0; self.num_elements()] };
+        let cx = self.cols as f64 / 2.0;
+        let cy = self.rows as f64 / 2.0;
+        let sin = f64::sin(theta);
+        let cos = f64::cos(theta);
+
+        for y in 0..self.rows{
+            for x in 0..self.cols{
+                let coord_x = x as f64 - cx;
+                let coord_y = y as f64 - cy;
+                
+                let orig_x = coord_x  * cos + coord_y  * sin;
+                let orig_y = -(coord_x ) * sin + coord_y  * cos;
+
+                let x1 = f64::round(orig_x + cx as f64);
+                let y1 = f64::round(orig_y + cy as f64);
+                
+                if x1 >=0.0 && x1 < self.cols as f64 && y1 >=0.0 && y1 < self.rows as f64{
+                    //Provavelmente incorreto, precisa interpolar caso o pixel não esteja em coordenadas inteiras
+                    rotated[y][x] = self[x1 as usize][y1 as usize];
+                }else{
+                    rotated[y][x] = 0.0;
+                }
+
+            }
+        }
+        rotated
+    }
+
 }
 
 impl fmt::Display for Matrix {
@@ -259,6 +362,19 @@ impl IndexMut<usize> for Matrix {
     }
 }
 
+fn f64_nearly_equal(a: f64, b: f64, epsilon: f64) -> bool {
+    let abs_a = a.abs();
+    let abs_b = b.abs();
+    let diff = (a - b).abs();
+    if a == b {
+        return true;
+    } else if a == 0.0 || b == 0.0 || (abs_a + abs_b < f64::MIN) {
+        return diff < (epsilon * f64::MIN);
+    } else {
+        return diff / f64::min(abs_a + abs_b, f64::MAX) < epsilon;
+    }
+}
+
 impl PartialEq for Matrix {
     fn eq(&self, other: &Self) -> bool {
         if self.rows != other.rows || self.cols != other.cols {
@@ -267,8 +383,8 @@ impl PartialEq for Matrix {
         //Comparação de floats com == pode gerar problemas.
         //Método de comparação absoluta, suficiente enquanto só usamos para testes
         //Uma biblioteca completa implementaria métodos mais robustos: https://floating-point-gui.de/errors/comparison/
-        for i in 00..self.num_elements() {
-            if (self.data[i] - other.data[i]).abs() > EPSILON {
+        for i in 0..self.num_elements() {
+            if !f64_nearly_equal(self.data[i], other.data[i], EPSILON) {
                 return false;
             }
         }
@@ -433,5 +549,91 @@ mod tests {
             data: vec![2.0, 7.0, -1.0, 0.0, 4.0, 1.0],
         };
         let panic = other + &base_matrix;
+    }
+
+    #[test]
+    fn test_equal() {
+        let base_matrix = Matrix {
+            rows: 3,
+            cols: 2,
+            data: vec![2.0123, 7.01231231, -1.0, 0.0, 4.0, 1.0],
+        };
+        let other = Matrix {
+            rows: 3,
+            cols: 2,
+            data: vec![2.0123, 7.01231231, -1.0, 0.0, 4.0, 1.0],
+        };
+        assert!(base_matrix == other);
+        let base_matrix = Matrix {
+            rows: 3,
+            cols: 2,
+            data: vec![2.0125, 7.01231231, -1.0, 0.0, 4.0, 1.0],
+        };
+        let other = Matrix {
+            rows: 3,
+            cols: 2,
+            data: vec![2.0123, 7.01231231, -1.0, 0.0, 4.0, 1.0],
+        };
+        assert!(base_matrix != other);
+    }
+
+    #[test]
+    fn test_translate() {
+        let mut base_matrix = Matrix {
+            rows: 4,
+            cols: 4,
+            data: vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ],
+        };
+        let mut b_l = base_matrix.clone();
+        let mut b_u = base_matrix.clone();
+        let mut b_d = base_matrix.clone();
+        let mut right_2 = Matrix {
+            rows: 4,
+            cols: 4,
+            data: vec![
+                0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 5.0, 6.0, 0.0, 0.0, 9.0, 10.0, 0.0, 0.0, 13.0, 14.0,
+            ],
+        };
+        let left_2 = Matrix {
+            rows: 4,
+            cols: 4,
+            data: vec![
+                3.0, 4.0, 0.0, 0.0, 7.0, 8.0, 0.0, 0.0, 11.0, 12.0, 0.0, 0.0, 15.0, 16.0, 0.0, 0.0,
+            ],
+        };
+        let up_2 = Matrix {
+            rows: 4,
+            cols: 4,
+            data: vec![
+                9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,16.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        };
+        let down_2 = Matrix {
+            rows: 4,
+            cols: 4,
+            data: vec![
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
+            ],
+        };
+
+        println!("Base: {}", base_matrix);
+        base_matrix.mut_translate_right(2);
+        b_l.mut_translate_left(2);
+        b_u.mut_translate_up(2);
+        b_d.mut_translate_down(2);
+        println!("Right: {}", base_matrix);
+        println!("Left: {}", b_l);
+        println!("Up: {}", b_u);
+        println!("Down: {}", b_d);
+
+        assert!(base_matrix == right_2);
+        assert!(b_l == left_2);
+        assert!(b_u == up_2);
+        assert!(b_d == down_2);
+
     }
 }
