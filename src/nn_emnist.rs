@@ -48,22 +48,7 @@ pub struct Parser {
 }
 
 impl LabelFileHeader {
-    pub fn parse_header(file_data: &[u8]) -> LabelFileHeader {
-        LabelFileHeader {
-            magic_number: u32::from_be_bytes(file_data[0..4].try_into().unwrap()),
-            num_labels: u32::from_be_bytes(file_data[4..8].try_into().unwrap()),
-        }
-    }
-}
-impl ImageFileHeader {
-    pub fn parse_header(file_data: &[u8]) -> ImageFileHeader {
-        ImageFileHeader {
-            magic_number: u32::from_be_bytes(file_data[0..4].try_into().unwrap()),
-            num_images: u32::from_be_bytes(file_data[4..8].try_into().unwrap()),
-            rows: u32::from_be_bytes(file_data[8..12].try_into().unwrap()),
-            cols: u32::from_be_bytes(file_data[12..16].try_into().unwrap()),
-        }
-    }
+   
 }
 
 impl Parser {
@@ -71,15 +56,31 @@ impl Parser {
     const IMAGE_OFFSET: u8 = 16;
     const IMAGE_SIZE: u64 = 28 * 28;
 
+    pub fn parse_image_header(file_data: &[u8]) -> ImageFileHeader {
+        ImageFileHeader {
+            magic_number: u32::from_be_bytes(file_data[0..4].try_into().unwrap()),
+            num_images: u32::from_be_bytes(file_data[4..8].try_into().unwrap()),
+            rows: u32::from_be_bytes(file_data[8..12].try_into().unwrap()),
+            cols: u32::from_be_bytes(file_data[12..16].try_into().unwrap()),
+        }
+    }
+
+    pub fn parse_label_header(file_data: &[u8]) -> LabelFileHeader {
+        LabelFileHeader {
+            magic_number: u32::from_be_bytes(file_data[0..4].try_into().unwrap()),
+            num_labels: u32::from_be_bytes(file_data[4..8].try_into().unwrap()),
+        }
+    }
+
     fn read_label_header(label_file: &mut std::fs::File) -> LabelFileHeader {
         let mut buffer: [u8; 64] = [0; 64];
         let bytes_read = label_file.read(&mut buffer);
-        LabelFileHeader::parse_header(&buffer)
+        Parser::parse_label_header(&buffer)
     }
     fn read_image_header(image_file: &mut std::fs::File) -> ImageFileHeader {
         let mut header_buffer: [u8; 32] = [0; 32];
         let bytes_read = image_file.read(&mut header_buffer);
-        ImageFileHeader::parse_header(&header_buffer)
+        Parser::parse_image_header(&header_buffer)
     }
 
     pub fn setup(label_file_name: &str, image_file_name: &str) -> Parser {
@@ -116,19 +117,19 @@ impl Parser {
             .seek(SeekFrom::Start((next_label_offset)))
             .unwrap();
         let mut label_buffer: [u8; 1] = [0];
-        let label: Result<usize, std::io::Error> = self.label_file.read(&mut label_buffer);
+        let label_bytes: Result<usize, std::io::Error> = self.label_file.read(&mut label_buffer);
 
         let mut image_buffer: [u8; 28 * 28] = [0; 28 * 28];
-        let mut transposed_buffer: [u8; 28 * 28] = [0; 28 * 28];
+        
         self.image_file
             .seek(SeekFrom::Start((next_image_offset)))
             .unwrap();
-        let img = self.image_file.read(&mut image_buffer);
-
-        Parser::transpose(&image_buffer, &mut transposed_buffer);
+        let img_bytes = self.image_file.read(&mut image_buffer);
 
         self.cur_index += 1;
 
+        let mut transposed_buffer: [u8; 28 * 28] = [0; 28 * 28];
+        Parser::transpose(&image_buffer, &mut transposed_buffer);
         (transposed_buffer.to_vec(), label_buffer[0])
     }
 
@@ -240,12 +241,15 @@ impl Bitmap {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use std::{
         fs::File,
         io::{Seek, SeekFrom},
     };
+
+    use crate::nn_matrix::Matrix;
 
     // Note this useful idiom: importing names from outer (for mod tests) scope. (Rust Book)
     use super::*;
@@ -256,7 +260,7 @@ mod tests {
 
         let bytes_read = file.read(&mut buffer);
 
-        let header = LabelFileHeader::parse_header(&buffer);
+        let header = Parser::parse_label_header(&buffer);
 
         println!(
             "Magic: {:?}, Num_Labels: {:?}",
@@ -279,7 +283,7 @@ mod tests {
         let bytes_read = file.read(&mut header_buffer);
         assert!(bytes_read.unwrap() == 32);
 
-        let header = ImageFileHeader::parse_header(&header_buffer);
+        let header = Parser::parse_image_header(&header_buffer);
 
         println!(
             "Magic: {:?}, Num_Labels: {:?}, Rows:{:?}, Cols: {:?}",
@@ -319,7 +323,25 @@ mod tests {
             let (img, label) = parser.read_next();
             println!("Label: {}", label);
             let bitmap = Bitmap::create_bitmap(&img);
-            let write = std::fs::write(format!("parsed_digit{}.bmp", i), bitmap);
+            let write = std::fs::write(format!("parsed_digit{}.bmp", i), &bitmap);
+            
+
+            let matrix = Matrix::from_vec(28, 28, img.iter().map(|f| (*f as f64)).collect());
+            let nm = matrix.rotate(0.785398);
+
+            let bmp:Vec<u8> = nm.data().iter().map(|f| (*f as u8)).collect();
+            let bitmap = Bitmap::create_bitmap(&bmp);
+            let write = std::fs::write(format!("parsed_digit{}_rotated.bmp", i), &bitmap);
+            
+            // let translated_right = translate_right_f64(&img);
+            // let rt = translated_right.iter().map(|f| (*f as u8));
+            // let bitmap = Bitmap::create_bitmap(&rt);
+            // let write = std::fs::write(format!("parsed_digit{}_right.bmp", i), bitmap);
+            
+            // let translated_left = translate_left_f64(&img);
+            // let lt:[u8; 784] = translated_left.iter().map(|f| (*f as u8)).collect();
+            // let bitmap = Bitmap::create_bitmap(&lt);
+            // let write = std::fs::write(format!("parsed_digit{}_left.bmp", i), bitmap);
         }
     }
 }
