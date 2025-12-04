@@ -20,31 +20,39 @@ use core::f64;
 //https://www.3blue1brown.com/lessons/backpropagation-calculus#title
 use crate::nn_matrix::Matrix;
 
+#[derive(Debug, Clone)]
 pub struct Gradient {
     pub weight: Matrix,
     pub delta: Matrix,
 }
 
+impl Gradient {
+    pub fn zero(&mut self) {
+        self.weight.zero();
+        self.delta.zero();
+    }
+}
+
 pub trait ActivationFunction {
-    fn activate(val: f64, z:&[f64]) -> f64;
+    fn activate(val: f64, z: &Vec<f64>) -> f64;
     fn derivative(val: f64) -> f64;
 }
 
 pub struct Sigmoid {
-    zed_sum:f64
+    zed_sum: f64,
 }
 impl ActivationFunction for Sigmoid {
-    fn activate(val: f64, _z:&[f64]) -> f64 {
+    fn activate(val: f64, _z: &Vec<f64>) -> f64 {
         1.0 / (1.0 + std::f64::consts::E.powf(-val))
     }
     fn derivative(val: f64) -> f64 {
-        let sigma = Sigmoid::activate(val, &[1.0]);
+        let sigma = Sigmoid::activate(val, &vec![1.0]);
         sigma * (1.0 - sigma)
     }
 }
 pub struct Relu {}
 impl ActivationFunction for Relu {
-    fn activate(val: f64, _z:&[f64]) -> f64 {
+    fn activate(val: f64, _z: &Vec<f64>) -> f64 {
         f64::max(0.0, val)
     }
     fn derivative(val: f64) -> f64 {
@@ -55,21 +63,46 @@ impl ActivationFunction for Relu {
     }
 }
 
-pub struct Softmax {}
-impl ActivationFunction for Softmax {
-    fn activate(val: f64, z:&[f64]) -> f64 {
-        //Softmax com ajuste para estabilidade numérica ()
-        let max =z.iter().fold(f64::NEG_INFINITY, |acc, &val|acc.max(val));
-        let sum:f64 = z.iter().map(|&val|(val-max).exp()).sum();
-        (val-max).exp() / sum
+pub struct Softmax {
+    pub cached_zed: Vec<f64>,
+    pub cached_sum: f64,
+    pub cached_max: f64,
+}
+
+impl Softmax {
+    pub fn activate(&mut self, val: f64, z: &Vec<f64>) -> f64 {
+        let max = z.iter().fold(f64::NEG_INFINITY, |acc, &val| acc.max(val));
+        if self.cached_zed != *z {
+            // println!("\tCloning zed.");
+            self.cached_zed = z.clone();
+            self.cached_sum = z.iter().map(|&val| (val - max).exp()).sum();
+            self.cached_max = z.iter().fold(f64::NEG_INFINITY, |acc, &val| acc.max(val));
+            // println!("\t\tCalculated max {}, sum {}", self.cached_max, self.cached_sum);
+        } else {
+            // println!("\tUsing cached max {}, sum {}", self.cached_max, self.cached_sum);
+        };
+        self.softmax(val, self.cached_max, self.cached_sum)
     }
-    fn derivative(_: f64) -> f64 {
-        1.0
+
+    fn softmax(&self, val: f64, max: f64, sum: f64) -> f64 {
+        //Softmax com ajuste para estabilidade numérica ()
+        (val - max).exp() / sum
     }
 }
+// impl ActivationFunction for Softmax {
+//     fn activate(val: f64, z:&Vec<f64>) -> f64 {
+//         //Softmax com ajuste para estabilidade numérica ()
+//         let max =z.iter().fold(f64::NEG_INFINITY, |acc, &val|acc.max(val));
+//         let sum:f64 = z.iter().map(|&val|(val-max).exp()).sum();
+//         (val-max).exp() / sum
+//     }
+//     fn derivative(_: f64) -> f64 {
+//         1.0
+//     }
+// }
 pub struct Identity {}
 impl ActivationFunction for Identity {
-    fn activate(val: f64, z:&[f64]) -> f64 {
+    fn activate(val: f64, z: &Vec<f64>) -> f64 {
         val
     }
     fn derivative(_: f64) -> f64 {
@@ -83,14 +116,12 @@ pub struct Layer {
     zed: Matrix,
     weights: Matrix,
     biases: Matrix,
-    activation_function: fn(f64, z:&[f64]) -> f64,
-    activation_derivative: fn(f64) -> f64, 
+    activation_function: Box<dyn FnMut(f64, &Vec<f64>) -> f64>, //    fn(f64, z: &Vec<f64>) -> f64,
+    activation_derivative: fn(f64) -> f64,
 }
 
-
-
-impl Layer  {
-    pub fn new<F:ActivationFunction>(
+impl Layer {
+    pub fn new<F: ActivationFunction + 'static>(
         prev_layer_neurons: usize,
         layer_neurons: usize,
     ) -> Layer {
@@ -99,11 +130,27 @@ impl Layer  {
             zed: Matrix::new(layer_neurons, 1),
             weights: Matrix::new_random(layer_neurons, prev_layer_neurons),
             biases: Matrix::new(layer_neurons, 1),
-            activation_function: F::activate,
+            activation_function: Box::new(F::activate),
             activation_derivative: F::derivative,
         }
     }
-    
+
+    pub fn new_with_function(
+        prev_layer_neurons: usize,
+        layer_neurons: usize,
+        activation_f: impl FnMut(f64, &Vec<f64>) -> f64 + 'static,
+        activation_d: fn(f64) -> f64,
+    ) -> Layer {
+        Layer {
+            neurons: Matrix::new(layer_neurons, 1),
+            zed: Matrix::new(layer_neurons, 1),
+            weights: Matrix::new_random(layer_neurons, prev_layer_neurons),
+            biases: Matrix::new(layer_neurons, 1),
+            activation_function: Box::new(activation_f),
+            activation_derivative: activation_d,
+        }
+    }
+
     pub fn neuron_qty(&self) -> usize {
         self.neurons.rows()
     }
@@ -148,7 +195,7 @@ impl Layer  {
         //activation = act_fn( bias + sum_i(input_neurons_i * weights_i) )
         // let weight_transpose = self.weights.transpose();
         let dot_product = &(self.weights) * &input_neurons; //A ordem importa (input * weights) geraria erro!
-        
+
         //Armazena o resultado para a fase de backprop
         self.zed = dot_product + &self.biases;
         assert!(self.zed.rows() == self.neurons.rows());
@@ -188,7 +235,7 @@ impl Layer  {
         cost_derivative: &dyn Fn(f64, f64) -> f64,
     ) -> Gradient {
         let mut weight_derivatives = Matrix::new(self.weights.rows(), self.weights.cols());
-        let mut deltas = Matrix::new(self.neuron_qty(), 1);
+        let mut deltas: Matrix = Matrix::new(self.neuron_qty(), 1);
 
         for i in 0..self.neurons.rows() {
             //∂aL/∂z = activation'(z) - Derivada parcial de a por z
@@ -206,6 +253,7 @@ impl Layer  {
                 weight_derivatives[i][j] = prev_activations[j][0] * deltas[i][0];
             }
         }
+        
         Gradient {
             weight: weight_derivatives,
             delta: deltas,
@@ -267,11 +315,14 @@ impl Layer  {
         }
     }
 
-    pub fn adjust_parameters(&mut self, gradients: Gradient, learning_rate: f64) {
+    pub fn adjust_parameters(&mut self, gradients: &mut Gradient, learning_rate: f64) {
+        // println!("Gradients are 0 ? Weights: {}", gradients.weight.is_zero());
+        let sub = gradients.weight.mut_scalar_product(learning_rate);
+        // println!("Scalar Prod are 0 ? Weights: {}", sub.is_zero());
         //Ajusta os pesos
-        self.weights -= &gradients.weight.scalar_product(learning_rate);
+        self.weights -= sub;
         //Ajusta os viéses
-        self.biases -= &gradients.delta.scalar_product(learning_rate);
+        self.biases -= gradients.delta.mut_scalar_product(learning_rate);
     }
 }
 
@@ -285,10 +336,8 @@ mod tests {
         let layer1_n = 5;
         let layer2_n = 3;
         //Camadas com pesos aleatórios e viéses inicializados em 0
-        let mut layer1 =
-            Layer::new::<Identity>(input_n, layer1_n);
-        let mut layer2 =
-            Layer::new::<Identity>(layer1_n, layer2_n);
+        let mut layer1 = Layer::new::<Identity>(input_n, layer1_n);
+        let mut layer2 = Layer::new::<Identity>(layer1_n, layer2_n);
         let input_mock = Matrix::from_vec(input_n, 1, vec![1.0, 1.0, 1.0]);
         let weights1_mock = Matrix::from_vec(
             layer1_n,
@@ -316,7 +365,7 @@ mod tests {
         layer2.propagate(&layer1.neurons);
 
         print!("Neurons:{}", layer2.neurons);
-        let expected =  Matrix::from_vec(3,1,vec![4.565, 10.65, 16.735]);
+        let expected = Matrix::from_vec(3, 1, vec![4.565, 10.65, 16.735]);
         print!("Expected: {}", expected);
         assert!(expected == layer2.neurons);
     }
@@ -327,7 +376,7 @@ mod tests {
         let output_n = 3;
         let input_layer_n = 5;
         //Camadas com pesos aleatórios e viéses inicializados em 0
-        let mut output_layer = Layer::new::<Relu>(input_layer_n, output_n, );
+        let mut output_layer = Layer::new::<Relu>(input_layer_n, output_n);
         let weights_mock = Matrix::from_vec(
             output_n,
             input_layer_n,
