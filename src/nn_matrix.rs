@@ -1,5 +1,4 @@
 use core::f64;
-use core::num;
 /**
  *  Copyright 2025 Eric Zancanaro
  *    
@@ -18,11 +17,8 @@ use core::num;
  */
 use rand;
 use rand::Rng;
-use std::cmp;
-use std::collections;
 use std::fmt;
 use std::ops::AddAssign;
-use std::ops::MulAssign;
 use std::ops::SubAssign;
 use std::ops::{Add, Index, IndexMut, Mul}; //Traits para o operador de índice []
 
@@ -81,7 +77,7 @@ impl Matrix {
         let high = ((6.0 as f64).sqrt() / ((n_in + n_out) as f64)).sqrt();
         let low = -high;
         let mut rng = rand::rng();
-        let mut distribution = rand::distr::Uniform::new(low, high).unwrap();
+        let distribution = rand::distr::Uniform::new(low, high).unwrap();
         Matrix {
             rows: n_in,
             cols: n_out,
@@ -167,18 +163,18 @@ impl Matrix {
 
     pub fn hadamard_product(&self, other: &Matrix) -> Matrix {
         assert!(self.rows == other.rows && self.cols == other.cols);
-        let mut productVec = vec![0.0; self.num_elements()];
+        let mut produtc_vec = vec![0.0; self.num_elements()];
         for i in 0..self.num_elements() {
-            productVec[i] = self.data[i] * other.data[i];
+            produtc_vec[i] = self.data[i] * other.data[i];
         }
         Matrix {
             rows: self.rows(),
             cols: self.cols,
-            data: productVec,
+            data: produtc_vec,
         }
     }
     pub fn mut_hadamard_product(&mut self, other: &Matrix) {
-        if (self.rows == other.rows && self.cols == other.cols) {
+        if self.rows == other.rows && self.cols == other.cols {
             for i in 0..self.num_elements() {
                 self.data[i] = self.data[i] * other.data[i];
             }

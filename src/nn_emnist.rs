@@ -16,10 +16,7 @@
  */
 //http://neuralnetworksanddeeplearning.com/chap2.html
 //https://www.3blue1brown.com/lessons/backpropagation-calculus#title
-use std::{
-    fs::File,
-    io::{Read, Seek, SeekFrom},
-};
+use std::io::{Read, Seek, SeekFrom};
 /**
  * Web Archive do formato usado no dataset MNIST
  *
@@ -74,12 +71,12 @@ impl Parser {
 
     fn read_label_header(label_file: &mut std::fs::File) -> LabelFileHeader {
         let mut buffer: [u8; 64] = [0; 64];
-        let bytes_read = label_file.read(&mut buffer);
+        let _bytes_read = label_file.read(&mut buffer);
         Parser::parse_label_header(&buffer)
     }
     fn read_image_header(image_file: &mut std::fs::File) -> ImageFileHeader {
         let mut header_buffer: [u8; 32] = [0; 32];
-        let bytes_read = image_file.read(&mut header_buffer);
+        let _bytes_read = image_file.read(&mut header_buffer);
         Parser::parse_image_header(&header_buffer)
     }
 
@@ -114,17 +111,17 @@ impl Parser {
         let next_image_offset = Parser::IMAGE_OFFSET as u64 + (Parser::IMAGE_SIZE * self.cur_index);
 
         self.label_file
-            .seek(SeekFrom::Start((next_label_offset)))
+            .seek(SeekFrom::Start(next_label_offset))
             .unwrap();
         let mut label_buffer: [u8; 1] = [0];
-        let label_bytes: Result<usize, std::io::Error> = self.label_file.read(&mut label_buffer);
+        let _label_bytes: Result<usize, std::io::Error> = self.label_file.read(&mut label_buffer);
 
         let mut image_buffer: [u8; 28 * 28] = [0; 28 * 28];
         
         self.image_file
-            .seek(SeekFrom::Start((next_image_offset)))
+            .seek(SeekFrom::Start(next_image_offset))
             .unwrap();
-        let img_bytes = self.image_file.read(&mut image_buffer);
+        let _img_bytes = self.image_file.read(&mut image_buffer);
 
         self.cur_index += 1;
 
@@ -235,7 +232,7 @@ impl Bitmap {
             byte_array[idx + 2] = i as u8; // Red
             byte_array[idx + 3] = 0; // Reserved (Alpha/Padding)
         }
-        let offset_pixels = 1078;
+        // let offset_pixels = 1078;
         byte_array[1078..].copy_from_slice(&image_buffer);
         byte_array.to_vec()
     }

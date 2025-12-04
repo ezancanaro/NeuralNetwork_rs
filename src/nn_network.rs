@@ -1,7 +1,5 @@
-use crate::nn_layer::ActivationFunction;
 use crate::nn_layer::Gradient;
 use crate::nn_layer::Layer;
-use crate::nn_layer::Relu;
 use crate::nn_matrix::Matrix;
 /**
  *  Copyright 2025 Eric Zancanaro

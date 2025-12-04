@@ -102,7 +102,7 @@ impl Softmax {
 // }
 pub struct Identity {}
 impl ActivationFunction for Identity {
-    fn activate(val: f64, z: &Vec<f64>) -> f64 {
+    fn activate(val: f64, _z: &Vec<f64>) -> f64 {
         val
     }
     fn derivative(_: f64) -> f64 {
