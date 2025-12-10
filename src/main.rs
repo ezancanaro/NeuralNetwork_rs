@@ -8,8 +8,14 @@ use std::time::Instant;
 use nn_layer::Layer;
 use std::env;
 
-use crate::nn_layer::{Gradient, Sigmoid, Softmax};
+use crate::nn_layer::{Gradient, Relu, Sigmoid, Softmax};
 use crate::nn_matrix::Matrix;
+
+
+const EMNINST_TRAIN_IMAGES:&str = "emnist/emnist-digits-train-images-idx3-ubyte";
+const EMNINST_TRAIN_LABELS:&str = "emnist/emnist-digits-train-labels-idx1-ubyte";
+const EMNINST_TEST_IMAGES:&str = "emnist/emnist-digits-test-labels-idx1-ubyte";
+const EMNINST_TEST_LABELS:&str = "emnist/emnist-digits-test-images-idx3-ubyte";
 
 fn label_to_vec(label: u8) -> Vec<f64> {
     let mut v: [f64; 10] = [0.0; 10];
@@ -31,8 +37,8 @@ fn normalize_cast_f64(original: Vec<u8>) -> Vec<f64>{
 
 fn train_emnist(network: &mut nn_network::NeuralNetwork, max_samples: u32, mixing_f: fn(Vec<u8>)->Vec<f64>) {
     let mut parser = nn_emnist::Parser::setup(
-        "emnist/emnist-digits-train-labels-idx1-ubyte",
-        "emnist/emnist-digits-train-images-idx3-ubyte",
+        EMINST_TRAIN_LABELS,
+        EMINST_TRAIN_IMAGES,
     );
     println!("Iniciando treinamento...");
     let start = Instant::now();
@@ -62,8 +68,8 @@ fn train_emnist(network: &mut nn_network::NeuralNetwork, max_samples: u32, mixin
 
 fn batch_train_emnist(network: &mut nn_network::NeuralNetwork, max_samples: u32) {
     let mut parser = nn_emnist::Parser::setup(
-        "emnist/emnist-digits-train-labels-idx1-ubyte",
-        "emnist/emnist-digits-train-images-idx3-ubyte",
+        EMINST_TRAIN_LABELS,
+        EMINST_TRAIN_IMAGES,
     );
 
     println!("Iniciando treinamento...");
@@ -115,8 +121,8 @@ fn batch_train_emnist(network: &mut nn_network::NeuralNetwork, max_samples: u32)
 
 fn test_emnist_on_training(network: &mut nn_network::NeuralNetwork, max_samples: u32, mixing_f: fn(Vec<u8>)->Vec<f64>) {
     let mut test_parser = nn_emnist::Parser::setup(
-        "emnist/emnist-digits-train-labels-idx1-ubyte",
-        "emnist/emnist-digits-train-images-idx3-ubyte",
+        EMINST_TRAIN_LABELS,
+        EMINST_TRAIN_IMAGES,
     );
     let mut right_classification = 0;
     let mut test_samples = 0;
@@ -145,8 +151,8 @@ fn test_emnist_on_training(network: &mut nn_network::NeuralNetwork, max_samples:
 
 fn test_emnist(network: &mut nn_network::NeuralNetwork, max_samples: u32, mixing_f: fn(Vec<u8>)->Vec<f64>) {
     let mut test_parser = nn_emnist::Parser::setup(
-        "emnist/emnist-digits-test-labels-idx1-ubyte",
-        "emnist/emnist-digits-test-images-idx3-ubyte",
+        EMINST_TEST_LABELS,
+        EMINST_TEST_IMAGES,
     );
     let mut right_classification = 0;
     let mut test_samples = 0;
@@ -209,7 +215,7 @@ fn main() {
     let output_layer = Layer::new::<Sigmoid>(128, 10);
     //Não implementei a derivada da Softmax por preguiça. Como é uma função matricial, precisaria estudar jacobianas para lembrar como isso é feito.
     //Para que a função softmax funcionasse com cache, seria necessário criar a camada com a closure.
-    //let output_layer = Layer::new_with_function(128, 10, closure, Sigmoid::derivative);
+    // let output_layer = Layer::new_with_function(128, 10, _closure, Softmax::derivative_with_xentropy);
 
     let mut last_epoch_weights = hidden_layer3.weights().clone();
 
